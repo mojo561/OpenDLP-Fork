@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+      <meta name="description" content="OpenDLP <!-- TMPL_VAR NAME=opendlpversion -->">
+      <meta name="author" content="JNR">
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+   </head>
+   <body>
+<!--    NAV     -->
+<TMPL_INCLUDE NAME="./test_includeme.tmpl">
+<!--    //NAV   -->
+
+               <main role="main" class="mr-5 ml-md-5 pt-5 mt-3">
+               <div class="w-50">
+
+
+<TMPL_IF NAME=output_list>
+               <h2>Manage existing scan profiles</h2>
+               <br>
+               <div class="w-50">
+               <form method=post action=profiles-delete-verify.html>
+                  <table class="table table-bordered table-hover table-sm">
+                  <thead>
+                     <tr>
+                        <th>Scan profile name</th>
+                        <th>Edit</th>
+                     </tr>
+                     </thead>
+                     <tbody>
+<TMPL_LOOP NAME=output_list>
+                     <tr>
+                        <td><input type="checkbox" name="<!-- TMPL_VAR NAME=profilenum -->" value=1> <!-- TMPL_VAR NAME=scan_profilename --></td>
+                        <td><a class="badge badge-primary" href="profiles.html?edit=<!-- TMPL_VAR NAME=scan_profilename -->">Edit</a></td>
+                     </tr>
+</TMPL_LOOP>
+<!--                      <tr> -->
+<!--                         <td><input type=submit value="Delete"></td> -->
+<!--                      </tr> -->
+                  </tbody>
+                  </table>
+                  <button type="submit" class="btn btn-outline-danger btn-md">Delete</button>
+               </form>
+               </div>
+<TMPL_ELSE>
+               <normal>No scan profiles exist.</normal><br>
+</TMPL_IF>
+
+               </div>
+               </main>
+    <!-- Bootstrap core JavaScript
+    ================================================== -->
+    <!-- Placed at the end of the document so the pages load faster -->
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+    <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery-slim.min.js"><\/script>')</script>
+    <script src="scripts/popper.min.js"></script>
+    <script src="scripts/bootstrap.min.js"></script>
+      
+      
+   </body>
+</html>

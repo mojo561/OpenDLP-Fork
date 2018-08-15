@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+      <meta name="description" content="OpenDLP <!-- TMPL_VAR NAME=opendlpversion -->">
+      <meta name="author" content="JNR">
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+      <script src=scripts/actions.js></script>
+   </head>
+   <body>
+<!--    NAV     -->
+<TMPL_INCLUDE NAME="./test_includeme.tmpl">
+<!--    //NAV   -->
+
+
+               <main role="main" class="mr-5 ml-md-5 pt-5 mt-3">
+<!--                <h2>View Results</h2><br> -->
+               <h2><!-- TMPL_VAR NAME=resultheading_hostname --></h2><br>
+               </main>
+
+<TMPL_IF NAME="armitage_detected">
+               <table border=3 cellspacing=3 cellpadding=3>
+                  <tr>
+                     <td>
+                     <font color=red>
+                        <font size=+1><b>WARNING: ARMITAGE DETECTED.</b></font><br><br>
+                        Armitage and OpenDLP cannot be used on the same session at the same time.<br>
+                        When managing OpenDLP through the Metasploit Bridge, do not interact with <br>
+                        the session through Armitage, or downloading the files below may fail.<br>
+                     </font>
+                     </td>
+                  </tr>
+               </table><br>
+</TMPL_IF>
+<TMPL_IF NAME="metasploiter_gotlasterror">
+               <br>
+               <table>
+                  <tr>
+                     <td>
+                        <font color=red>
+                        It appears that session $sessionid has died. You will be unable to download files.<br>
+                        Press the button below to review the current Metasploit session list and <br>
+                        update the session id for this system.
+                        </font>
+                        <form action=updatesessionid.html method=POST>
+                           <input type=hidden name="profile"     value="<!-- TMPL_VAR NAME=metasploiter_err_profile -->">
+                           <input type=hidden name="originalId"  value="<!-- TMPL_VAR NAME=metasploiter_err_orgid -->">
+                           <input type=hidden name="hostname"    value="<!-- TMPL_VAR NAME=metasploiter_err_hostname -->">
+                           <input type=hidden name="ip"          value="<!-- TMPL_VAR NAME=metasploiter_err_ip -->">              
+                           <input type=hidden name="tracker"     value="<!-- TMPL_VAR NAME=metasploiter_err_tracker -->">
+                           <input type=hidden name="scanname"    value="<!-- TMPL_VAR NAME=metasploiter_err_scanname -->">
+                           <br>
+                           <center><input type=submit value='Update Session Id'></center>
+                        </form>
+                     </td>
+                  </tr>
+               </table>
+               <br>
+</TMPL_IF>
+<TMPL_IF NAME="metasploiter_unknownerror">
+               <font color=red>Unable to connect to metasploit, you will not be able to download files.</font><br>
+               <font color=red>(Error detail: <!-- TMPL_VAR NAME=metasploiter_err_detail -->)</font><br><br>
+</TMPL_IF>
+<TMPL_IF NAME="metasploiter_foundhost">
+               <br>
+               <table>
+                  <tr>
+                     <td>
+                        <font color=red>It appears that session <!-- TMPL_VAR NAME=metasploiter_sessionid --> is pointing to a different machine.</font>
+                        <br><br>
+                        <i>The original machine was: <!-- TMPL_VAR NAME=metasploiter_ip --> (<!-- TMPL_VAR NAME=metasploiter_hostname -->).<br>
+                        Session <!-- TMPL_VAR NAME=metasploiter_sessionid --> is currently pointing to: <!-- TMPL_VAR NAME=metasploiter_foundHost --> (<!-- TMPL_VAR NAME=metasploiter_foundHostname -->).<br></i>
+                        <br>
+                        <font color=red>
+                        Because of this mismatch, you will be unable to download any files.<br>
+                        Press the button below to review the current Metasploit session list and update the<br>
+                        session id for this system.
+                        </font>
+                        <form action=updatesessionid.html method=POST>
+                           <input type=hidden name="profile"     value="<!-- TMPL_VAR NAME=metasploiter_profile -->">
+                           <input type=hidden name="originalId"  value="<!-- TMPL_VAR NAME=metasploiter_sessionid -->">
+                           <input type=hidden name="hostname"    value="<!-- TMPL_VAR NAME=metasploiter_hostname -->">
+                           <input type=hidden name="ip"          value="<!-- TMPL_VAR NAME=metasploiter_ip -->">
+                           <input type=hidden name="tracker"     value="<!-- TMPL_VAR NAME=metasploiter_system -->">
+                           <input type=hidden name="scanname"    value="<!-- TMPL_VAR NAME=metasploiter_scanname -->">
+                           <br>
+                           <center><input type=submit value='Update Session Id'></center>
+                        </form>
+                     </td>
+                  </tr>
+               </table>
+               <br>
+</TMPL_IF>
+
+<div class="container ml-1">
+<div class="row align-items-start">
+
+<TMPL_IF NAME="usetable_a">               <!-- TABLE A  -->
+               <div class="col-sm-4">
+               <table class="table table-bordered table-sm">
+                  <tr><td>Profile</td><td align=right><!-- TMPL_VAR NAME=resultheading_profilename --></td></tr>
+                  <tr><td>Status</td><td align=right><!-- TMPL_VAR NAME=resultheading_scanstatus --></td></tr>
+                  <tr><td>Step</td><td align=right><!-- TMPL_VAR NAME=resultheading_scanstep --></td></tr>
+                  <tr><td>Files Done</td><td align=right><!-- TMPL_VAR NAME=resultheading_filesdone --></td></tr>
+                  <tr><td>Files Total</td><td align=right><!-- TMPL_VAR NAME=resultheading_filestotal --></td></tr>
+                  <tr><td>Bytes Done</td><td align=right><!-- TMPL_VAR NAME=resultheading_bytesdone --></td></tr>
+                  <tr><td>Bytes Total</td><td align=right><!-- TMPL_VAR NAME=resultheading_bytestotal --></td></tr>
+                  <tr>
+                     <td>Progress</td>
+                     <td>
+                        <div class="container">
+                           <img src="images/red.gif" width="<!-- TMPL_VAR NAME=resultheading_progresspercentage -->" height="10">
+                        </div>
+                     </td>
+                  </tr>
+                  <tr><td>Percentage</td><td align=right><!-- TMPL_VAR NAME=resultheading_percentage --></td></tr>
+                  <tr><td>Completion Time</td><td align=right><!-- TMPL_VAR NAME=resultheading_completiontime --><br></td></tr>
+                  <tr><td>Total Findings</td><td align=right><!-- TMPL_VAR NAME=resultheading_totalfindings --></td></tr>
+                  <tr><td>False Positives</td><td align=right><!-- TMPL_VAR NAME=resultheading_fpcount --></td></tr>
+                  <tr><td>Valid Findings</td><td align=right><!-- TMPL_VAR NAME=resultheading_validfindings --></td></tr>
+                  <tr><td>Updated</td><td align=right><!-- TMPL_VAR NAME=resultheading_updated --></td></tr>
+                  <tr>
+                     <td>Pause</td><td align=right><!-- TMPL_VAR NAME=resultheading_pausectrl --></td>
+                  </tr>
+                  <tr>
+                     <td>Resume</td><td align=right><!-- TMPL_VAR NAME=resultheading_resumectrl --></td>
+                  </tr>
+                  <tr>
+                     <td><!-- TMPL_VAR NAME=scanstop_flavortext --></td><td align=right><!-- TMPL_VAR NAME=resultheading_stopuninstall --></td>
+                  </tr>
+               </table>
+               </div>
+               <!-- TABLE A // --></TMPL_IF>
+<TMPL_IF NAME="usetable_b">               <!-- TABLE B -->
+               <div class="col-sm-4">
+               <table class="table table-bordered table-sm">
+                  <tr><td>Profile</td><td align=right><!-- TMPL_VAR NAME=resultheading_profilename --></td></tr>
+                  <tr><td>Status</td><td align=right><!-- TMPL_VAR NAME=resultheading_scanstatus --></td></tr>
+                  <tr><td>Step</td><td align=right><!-- TMPL_VAR NAME=resultheading_scanstep --></td></tr>
+                  <tr><td>Databases Done</td><td align=right><!-- TMPL_VAR NAME=resultheading_dbsdone --></td></tr>
+                  <tr><td>Databases Total</td><td align=right><!-- TMPL_VAR NAME=resultheading_dbstotal --></td></tr>
+                  <tr><td>Tables Done</td><td align=right><!-- TMPL_VAR NAME=resultheading_tablesdone --></td></tr>
+                  <tr><td>Tables Total</td><td align=right><!-- TMPL_VAR NAME=resultheading_tablestotal --></td></tr>
+                  <tr><td>Columns Done</td><td align=right><!-- TMPL_VAR NAME=resultheading_columnsdone --></td></tr>
+                  <tr><td>Columns Total</td><td align=right><!-- TMPL_VAR NAME=resultheading_columnstotal --></td></tr>
+                  <tr>
+                     <td>Progress</td>
+                     <td>
+                        <div class="container">
+                           <img src="images/red.gif" width="<!-- TMPL_VAR NAME=resultheading_progresspercentage -->" height="10">
+                        </div>
+                     </td>
+                  </tr>
+                  <tr><td>Percentage</td><td align=right><!-- TMPL_VAR NAME=resultheading_percentage --></td></tr>
+                  <tr><td>Completion Time</td><td align=right><!-- TMPL_VAR NAME=resultheading_completiontime --><br></td></tr>
+                  <tr><td>Total Findings</td><td align=right><!-- TMPL_VAR NAME=resultheading_totalfindings --></td></tr>
+                  <tr><td>False Positives</td><td align=right><!-- TMPL_VAR NAME=resultheading_fpcount --></td></tr>
+                  <tr><td>Valid Findings</td><td align=right><!-- TMPL_VAR NAME=resultheading_validfindings --></td></tr>
+                  <tr><td>Updated</td><td align=right><!-- TMPL_VAR NAME=resultheading_updated --></td></tr>
+                  <tr>
+                     <td>Pause</td><td align=right><!-- TMPL_VAR NAME=resultheading_pausectrl --></td>
+                  </tr>
+                  <tr>
+                     <td>Resume</td><td align=right><!-- TMPL_VAR NAME=resultheading_resumectrl --></td>
+                  </tr>
+                  <tr>
+                     <td><!-- TMPL_VAR NAME=scanstop_flavortext --></td><td align=right><!-- TMPL_VAR NAME=resultheading_stopuninstall --></td>
+                  </tr>
+               </table>
+               </div>
+               <!-- TABLE B // --></TMPL_IF>
+
+<TMPL_IF NAME="useform_a">               <!-- FORM A -->
+               <div class="col-sm-8">
+               <form method=POST action=results-fp.html>
+                  <input type=hidden name=tracker value="<!-- TMPL_VAR NAME=result_scansystem -->">
+                  <input type=hidden name=scan value="<!-- TMPL_VAR NAME=result_scanname -->">
+                  <table class="table table-striped table-dark table-sm">
+                  <thead>
+                     <tr>
+                        <th>#</th>
+                        <th>Regex</th>
+                        <th>Pattern</th>
+                        <th>File (click to download)</th>
+                        <th>Byte offset</th>
+                        <th>False?</th>
+                     </tr>
+                  </thead>
+                  <tbody>
+<TMPL_LOOP NAME=result_values>
+                     <tr>
+                        <td><!-- TMPL_VAR NAME=result_localcounter --></td>
+                        <td><!-- TMPL_VAR NAME=result_regexmatchname --></td>
+                        <td><!-- TMPL_VAR NAME=result_regexmatchvalue --></td>
+                        <td><b><a href="<!-- TMPL_VAR NAME=result_filedownloadhref -->" onclick="return popup(this, '<!-- TMPL_VAR NAME=result_popupwindowname -->')"><!-- TMPL_VAR NAME=result_filedownloadhreftext --></a></b></td>
+                        <td><!-- TMPL_VAR NAME=result_byteoffset --></td>
+                        <td><input type="checkbox" name="f<!-- TMPL_VAR NAME=result_number -->" value=1></td>
+                     </tr>
+</TMPL_LOOP>
+                     <tr>
+<!--                         <td colspan=6 align=right><input type=submit value="Mark Selected as False Positives"></td> -->
+                        <td colspan=6 align=right><button type="submit" class="btn btn btn-primary btn-md">Mark Selected as False Positives</button></td>
+                     </tr>
+                  </tbody>
+                  </table>
+               </form>
+               </div>
+               <!-- FORM A // --></TMPL_IF>
+<TMPL_IF NAME="useform_b">               <!-- FORM B -->
+               <div class="col-sm-8">
+               <form method=POST action=results-fp.html>
+                  <input type=hidden name=tracker value="<!-- TMPL_VAR NAME=result_scansystem -->">
+                  <input type=hidden name=scan value="<!-- TMPL_VAR NAME=result_scanname -->">
+                  <table class="table table-bordered table-sm">
+                  <thead>
+                     <tr>
+                        <th>#</th>
+                        <th>Regex</th>
+                        <th>Pattern</th>
+                        <th>Database</th>
+                        <th>Table</th>
+                        <th>Column</th>
+                        <th>Row</th>
+                        <th>False?</th>
+                     </tr>
+                  </thead>
+                  <tbody>
+<TMPL_LOOP NAME=result_values>
+                     <tr>
+                        <td><!-- TMPL_VAR NAME=result_localcounter --></td>
+                        <td><!-- TMPL_VAR NAME=result_regexmatchname --></td>
+                        <td><!-- TMPL_VAR NAME=result_regexmatchvalue --></td>
+                        <td><!-- TMPL_VAR NAME=result_dbname --></td>
+                        <td><!-- TMPL_VAR NAME=result_tablename --></td>
+                        <td><!-- TMPL_VAR NAME=result_colname --></td>
+                        <td><!-- TMPL_VAR NAME=result_rowname --></td>
+                        <td><input type="checkbox" name="f<!-- TMPL_VAR NAME=result_number -->" value=1></td>
+                     </tr>
+</TMPL_LOOP>
+                     <tr>
+<!--                         <td colspan=6 align=right><input type=submit value="Mark Selected as False Positives"></td> -->
+                        <td colspan=8 align=right><button type="submit" class="btn btn btn-primary btn-md">Mark Selected as False Positives</button></td>
+                     </tr>
+                  </tbody>
+                  </table>
+               </form>
+               </div>
+               <!-- FORM B // --></TMPL_IF>
+               </div>
+               </div>
+
+
+
+   <!-- Bootstrap core JavaScript
+   ================================================== -->
+   <!-- Placed at the end of the document so the pages load faster -->
+   <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+   <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery-slim.min.js"><\/script>')</script>
+   <script src="scripts/popper.min.js"></script>
+   <script src="scripts/bootstrap.min.js"></script>
+   </body>
+</html>

@@ -1,0 +1,271 @@
+#!/usr/bin/perl
+
+use CGI qw/:standard/;
+use DBI;
+use MIME::Base64;
+use Capture::Tiny qw/capture/;
+my $pathtosecret = "../etc/gpgsecret";
+
+my $db_admin_file = "../etc/db_admin";
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+($db_username, $db_password) = split( ":", $db_line );
+
+my $query = CGI->new;
+my $file = $query->param('file');
+my $ip = $query->param('ip');
+my $profile = $query->param('profile');
+my $sessionid = $query->param('sessionid');
+my $gpgrecipient = $query->param('gpgrecipient');
+my $gpgpassphrase = $query->param('gpgpassphrase');
+
+my $wmiexec = "/usr/share/doc/python-impacket/examples/wmiexec.py";
+
+#NEW & TODO: check if blank instead...
+if(!$gpgpassphrase || $gpgpassphrase eq "")
+{
+    $gpgpassphrase = ":)";
+}
+
+if($gpgpassphrase ne "" && $gpgrecipient ne "")
+{
+    my $pubkeycheck = `gpg -k --with-colons --homedir /home/www-data/.gnupg $gpgrecipient | grep "<$gpgrecipient>"`;
+    if(not $pubkeycheck =~ m/<$gpgrecipient>/)
+    {
+        print "Content-type: text/html\n\n";
+        print "<!DOCTYPE html>\n<html>\n<body>\n";
+        print "GPG public key mispelled(?) (TODO)";
+        print "</body>\n</html>";
+        die;
+    }
+}
+else
+{
+    print "Content-type: text/html\n\n";
+    print "<!DOCTYPE html>\n<html>\n<body>\n";
+    print "GPG blank error (todo)";
+    print "</body>\n</html>";
+    die;
+}
+
+if( $profile ne "" && $ip ne "" && $file ne "" )
+{
+    $file = decode_base64( $file );
+	$ip = decode_base64( $ip );
+	$profile = decode_base64( $profile );
+	
+	my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+	my $string = "SELECT username,gpgpassword,domain,hash,scantype,metauser,metapass,metahost,metaport,metapath,metalatency,metatimeout,metassl from profiles where profile=?";
+	my $sth = $dbh->prepare( $string );
+	$sth->execute( $profile );
+	####################
+	my $results = $sth->fetchrow_hashref();
+	my $username   = $results->{"username"};
+	my $domain     = $results->{"domain"};
+	my $smbhash    = $results->{"hash"};
+	my $scantype   = $results->{"scantype"};
+	my $metauser   = $results->{"metauser"};
+	my $metapass   = $results->{"metapass"};
+	my $metahost   = $results->{"metahost"};
+	my $metaport   = $results->{"metaport"};
+	my $metapath   = $results->{"metapath"};
+	my $metalatency= $results->{"metalatency"};
+	my $metatimeout= $results->{"metatimeout"};
+	my $metassl    = $results->{"metassl"};
+	my $password   = "";
+	
+	my($stdout, $stderr) = capture {
+        open(my $GPG, "| gpg --quiet --batch --homedir /home/www-data/.gnupg --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+        print $GPG $results->{"gpgpassword"};
+        close($GPG);
+    };
+
+    my $lt = localtime();
+    if($stdout eq "")
+    {
+        print "Password decryption error. Please check the error logs!<br><br>\n";
+        warn "[$lt] GPG ran into an issue: $stderr";
+    }
+    else
+    {
+        $password = decode_base64($stdout);
+        warn "[$lt] The password was sucessfully decrypted";
+    }
+	####################
+	
+	if($scantype eq "win_agent")
+	{
+        my $filequote = $file;
+        $filequote =~ s~(\\)~\\\1~g;
+
+        my $command = "$wmiexec $domain/$username:$password\@$ip ";
+        $command .= "\"powershell -Command \\\"&{if (Test-Path '$file'){Get-Content '$file' | gpg --batch -aer $gpgrecipient | Tee-Object -Variable cmdOutput}else{Write-Output 'NT_STATUS_NO_SUCH_FILE'}}\\\"\"";
+        my $output = `$command`;
+        my $str1 = $output;
+        
+        $str1 =~ /(?=\-{5}BEGIN PGP MESSAGE\-{5})(.*)(?<=\-{5}END PGP MESSAGE\-{5})/gs;
+        $str1 = "$1";
+        
+        if($str1 && length($str1) > 0 && $str1 =~ m/\-{5}BEGIN PGP MESSAGE\-{5}/)
+        {
+            my @file_parts = split("\\\\", $file);
+            my $download_filename = $ip . "-" . @file_parts[-1];
+            my $decry;
+            
+            open(my $TMP, '>', "/tmp/deleteme.txt");
+            print $TMP $str1;
+            close $TMP;
+            
+            print "Content-Type: text/html\n";
+            print "Content-Disposition: attachment; filename=\"$download_filename\"\n\n";
+            
+            open(my $GPG, "| gpg --quiet --batch --pinentry-mode loopback --passphrase-fd 0 --homedir /home/www-data/.gnupg -d /tmp/deleteme.txt");
+            print $GPG $gpgpassphrase;
+            #don't have to print anything else here at the moment...
+            close $GPG;
+            $decry = $?;
+            
+            if ($decry != 0)
+            {
+                open(my $TMP2, '<', "/tmp/deleteme.txt");
+                #here we actually do have to print stuff... weird eh?
+                while(defined (my $line = <$TMP2>))
+                {
+                    chomp($line);
+                    print $line;
+                }
+                close $TMP2;
+            }
+            
+            unlink("/tmp/deleteme.txt");
+        }
+        else
+        {
+            print "Content-type: text/html\n\n";
+            print "<!DOCTYPE html>\n<html>\n<body>\n";
+            print "todo...$output...";
+            print "</body>\n</html>";
+        }
+	}
+	elsif($scantype eq "unix_agentless") # TODO needs more testing
+	{
+        my $path = $file;
+        $path =~ s~^/[^/]+~~m; # TODO: this does not work for drives other than C:\ ... just for this particular script only
+        
+        my $command = "$wmiexec $domain/$username:$password\@$ip ";
+        $command .= "\"powershell -Command \\\"&{if (Test-Path '$path'){Get-Content '$path' | gpg --batch -aer $gpgrecipient | Tee-Object -Variable cmdOutput}else{Write-Output 'NT_STATUS_NO_SUCH_FILE'}}\\\"\"";
+        my $output = `$command`;
+        my $str1 = $output;
+        
+        $str1 =~ /(?=\-{5}BEGIN PGP MESSAGE\-{5})(.*)(?<=\-{5}END PGP MESSAGE\-{5})/gs;
+        $str1 = "$1";
+        
+        if($str1 && length($str1) > 0 && $str1 =~ m/\-{5}BEGIN PGP MESSAGE\-{5}/)
+        {
+            my @file_parts = split("/", $file);
+            my $download_filename = $ip . "-" . @file_parts[-1];
+            my $decry;
+            
+            open(my $TMP, '>', "/tmp/deleteme.txt");
+            print $TMP $str1;
+            close $TMP;
+            
+            print "Content-Type: text/html\n";
+            print "Content-Disposition: attachment; filename=\"$download_filename\"\n\n";
+            
+            open(my $GPG, "| gpg --quiet --batch --pinentry-mode loopback --passphrase-fd 0 --homedir /home/www-data/.gnupg -d /tmp/deleteme.txt");
+            print $GPG $gpgpassphrase;
+            #don't have to print anything else here at the moment...
+            close $GPG;
+            $decry = $?;
+            
+            if ($decry != 0)
+            {
+                open(my $TMP2, '<', "/tmp/deleteme.txt");
+                #here we actually do have to print stuff... weird eh?
+                while(defined (my $line = <$TMP2>))
+                {
+                    chomp($line);
+                    print $line;
+                }
+                close $TMP2;
+            }
+            
+            unlink("/tmp/deleteme.txt");
+        }
+        else
+        {
+            print "Content-type: text/html\n\n";
+            print "<!DOCTYPE html>\n<html>\n<body>\n";
+            print "todo...$output...";
+            print "</body>\n</html>";
+        }
+	}
+	elsif($scantype eq "win_share" || $scantype eq "win_agentless") # TODO needs more testing
+	{
+        my $path = $file;
+        $path =~ s/smb://;
+        
+        $ip =~ m/([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/;
+        my $extract_ip = $1;
+        
+        my @file_parts = split("/", $file);
+        my $download_filename = $extract_ip . "-" . @file_parts[-1];
+        
+        my $command = "$wmiexec $domain/$username:$password\@$extract_ip ";
+        $command .= "\"powershell -Command \\\"&{if (Test-Path '$path'){Get-Content '$path' | gpg --batch -aer $gpgrecipient | Tee-Object -Variable cmdOutput}else{Write-Output 'NT_STATUS_NO_SUCH_FILE'}}\\\"\"";
+        my $output = `$command`;
+        my $str1 = $output;
+        
+        $str1 =~ /(?=\-{5}BEGIN PGP MESSAGE\-{5})(.*)(?<=\-{5}END PGP MESSAGE\-{5})/gs;
+        $str1 = "$1";
+        
+        if($str1 && length($str1) > 0 && $str1 =~ m/\-{5}BEGIN PGP MESSAGE\-{5}/)
+        {
+            my $decry;
+            
+            open(my $TMP, '>', "/tmp/deleteme.txt");
+            print $TMP $str1;
+            close $TMP;
+            
+            print "Content-Type: text/html\n";
+            print "Content-Disposition: attachment; filename=\"$download_filename\"\n\n";
+            
+            open(my $GPG, "| gpg --quiet --batch --pinentry-mode loopback --passphrase-fd 0 --homedir /home/www-data/.gnupg -d /tmp/deleteme.txt");
+            print $GPG $gpgpassphrase;
+            #don't have to print anything else here at the moment...
+            close $GPG;
+            $decry = $?;
+            
+            if ($decry != 0)
+            {
+                open(my $TMP2, '<', "/tmp/deleteme.txt");
+                #here we actually do have to print stuff... weird eh?
+                while(defined (my $line = <$TMP2>))
+                {
+                    chomp($line);
+                    print $line;
+                }
+                close $TMP2;
+            }
+            
+            unlink("/tmp/deleteme.txt");
+        }
+        else
+        {
+            print "Content-type: text/html\n\n";
+            print "<!DOCTYPE html>\n<html>\n<body>\n";
+            print "todo...$output...";
+            print "</body>\n</html>";
+        }
+	}
+	else
+	{
+        print "Content-type: text/html\n\n";
+        print "<!DOCTYPE html>\n<html>\n<body>\n";
+        print "<h2>Not yet implemented for $scantype...</h2>\n";
+        print "</body>\n</html>";
+	}
+}

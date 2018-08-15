@@ -1,0 +1,1795 @@
+#!/usr/bin/perl
+
+# Copyright Andrew Gavin 2009-2012
+# Modifications by Charles Smith, N2 Net Security,Inc. 2011-2012
+# More modifications by Josh. 2018.07.22
+#
+# This file is part of OpenDLP.
+#
+# OpenDLP is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# OpenDLP is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with OpenDLP.  If not, see <http://www.gnu.org/licenses/>.
+
+
+use CGI qw/:standard/;
+use DBI;
+#########################
+#NEW: Josh 2018.07.22
+#########################
+use Capture::Tiny qw/capture/;
+use MIME::Base64;
+use HTML::Template;
+
+#my $version = get_version();
+
+my $MAX_LENGTH_PROFILE = 64;
+my $MAX_LENGTH_USERNAME = 128;
+my $MAX_LENGTH_SMBHASH = 65;
+my $MAX_LENGTH_PASSWORD = 255;
+my $MAX_LENGTH_PATH = 255;
+my $MAX_LENGTH_DOMAIN = 255;
+my $MAX_LENGTH_EXTS = 65535;
+my $MAX_LENGTH_DIRS = 65535;
+my $MAX_LENGTH_REGEXES = 65535;
+my $MAX_LENGTH_DATABASES = 65535;
+my $MAX_LENGTH_TABLES = 65535;
+my $MAX_LENGTH_COLUMNS = 65535;
+my $MAX_ROWS = 9223372036854775807;
+my $MAX_LENGTH_URL = 255;
+my $MAX_LENGTH_URL_USER = 32;
+my $MAX_LENGTH_URL_PASS = 32;
+my $MAX_DELAYTIME = 65535;
+my $MAX_LENGTH_DESCRIPTION = 255;
+my $MAX_CONCURRENT = 100;
+my $db_admin_file = "../etc/db_admin";
+
+my $is_valid = 1;
+my( $profile, $username, $password, $domain, $dir_choice, $directories ) = "";
+my $smbhash = "";
+my( $ext_choice, $extensions, $path, $zipfiles, $creditcards ) = "";
+my( $db_username, $db_password, $memory, $mask ) = "";
+my( $url, $urluser, $urlpass, $delaytime, $description, $debug, $concurrent ) = "";
+my( $db_choice, $dbs, $table_choice, $tables, $column_choice, $columns, $rows, $scantype ) = "";
+my( $is_new ) = "";
+my @regexes = ();
+my( $metahost, $metaport, $metauser, $metapass, $metapath) = "";
+my $metalatency = 100;
+my $metatimeout = 30;
+my $metassl = 0;
+#########################
+# NEW: Josh - 2018.07.22
+#########################
+my $emails = "";
+my $emailsEnabled = 0;
+my $dopasswordupdate = "0";
+my $dourlpasswordupdate = "0";
+my $pathtosecret = "../etc/gpgsecret";
+my $view_template = HTML::Template->new(filename => 'profiles-new_view.tmpl');
+my @error_list = ();
+
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+($db_username, $db_password) = split( ":", $db_line );
+
+$view_template->param(opendlpversion => get_version());
+
+if( request_method() ne "POST" )
+{
+	$is_valid = 0;
+	#print "Only POST requests are allowed. Try starting <a href=profiles.html>here</a>.<br>\n";
+	push @error_list, {error => "Only POST requests are allowed. Try starting <a href=profiles.html>here</a>."};
+}
+
+foreach $p (param())
+{
+	$form{$p} = param($p);
+
+
+	#########################
+	# NEW: Josh - 2018.07.22
+	# TODO: validation...
+	#########################
+	if( $p eq "email_value" && length($form{$p}) != 0 )
+	{
+        $emails = $form{$p};
+	}
+	
+	if( $p eq "email_check" )
+	{
+        $emailsEnabled = 1;
+	}
+	
+	if( $p eq "pwtoggle_checkbox")
+	{
+        $dopasswordupdate = $form{$p};
+	}
+	
+	if( $p eq "urlpwtoggle_checkbox")
+	{
+        $dourlpasswordupdate = $form{$p};
+	}
+	#########################
+
+	if( $p eq "profilename" )
+	{
+		$profile = $form{$p};
+		$profile =~ s/^\ +//g;
+		$profile =~ s/\ +$//g;
+		if( length( $profile ) > $MAX_LENGTH_PROFILE )
+		{
+			$is_valid = 0;
+			#print "Profile is too long. Limit it to $MAX_LENGTH_SCAN characters.<br><br>\n";
+			push @error_list, {error => "Profile is too long. Limit it to $MAX_LENGTH_SCAN characters."};
+		}
+		if( $profile !~ /^[a-z0-9\ \,\.\-\_]+$/i )
+		{
+			$is_valid = 0;
+			#print "Profile cannot be blank and can only contain the following characters, including whitespace: A-Z0-9,.-_<br><br>\n";
+			push @error_list, {error => "Profile cannot be blank and can only contain the following characters, including whitespace: A-Z0-9,.-_"};
+		}
+	}
+
+	if( $p eq "scantype" )
+	{
+		$scantype = $form{$p};
+		if( $scantype !~ /^(win_agent|meta_agent|post_agent|mssql_agentless|mysql_agentless|win_agentless|unix_agentless|win_share)$/ )
+		{
+			$is_valid = 0;
+			#print "Scan type can only be Windows Filesystem (agent), Metasploit (agent), Windows Filesystem (agentless), UNIX Filesystem (agentless), Microsoft SQL Server, or MySQL<br><br>\n";
+			push @error_list, {error => "Scan type can only be Windows Filesystem (agent), Metasploit (agent), Windows Filesystem (agentless), UNIX Filesystem (agentless), Microsoft SQL Server, or MySQL"};
+		}
+	}
+
+	if( $p eq "username" )
+	{
+		$username = $form{$p};
+		$username =~ s/^\ +//g;
+		$username =~ s/\ +$//g;
+		if( length( $username ) > $MAX_LENGTH_USERNAME )
+		{
+			$is_valid = 0;
+			#print "Username is too long. Limit it to $MAX_LENGTH_USERNAME characters.<br><br>\n";
+			push @error_list, {error => "Username is too long. Limit it to $MAX_LENGTH_USERNAME characters."};
+		}
+	}
+
+	if( $p eq "smbhash" && length($form{$p}) != 0 ) {$smbhash = $form{$p};}
+
+	if( $p eq "password" )
+	{
+		$password = $form{$p};
+		#error handling is done further down...
+#		if( length( $password ) > $MAX_LENGTH_PASSWORD )
+#		{
+#			$is_valid = 0;
+#			print "Password is too long. Limit it to $MAX_LENGTH_PASSWORD characters.<br><br>\n";
+#		}
+	}
+
+	if( $p eq "mask" )
+	{
+		$mask = $form{$p};
+		if( $mask !~ /^(0|1)$/ )
+		{
+			$is_valid = 0;
+			#print "Value for masking sensitive data can only be a zero or one.<br><br>\n";
+			push @error_list, {error => "Value for masking sensitive data can only be a zero or one."};
+		}
+	}
+
+	if( $p eq "metassl" )
+	{
+		$metassl = $form{$p};
+		if( $metassl !~ /^(0|1)$/ )
+		{
+			$is_valid = 0;
+			#print "Value for using SSL to communicate with Metasploit can only be a zero or one. Received was: $metassl<br><br>\n";
+			push @error_list, {error => "Value for using SSL to communicate with Metasploit can only be a zero or one. Received was: $metassl"};
+		}
+	}
+	if( $p eq "is_new" )
+	{
+		$is_new = $form{$p};
+		if( $is_new !~ /^(0|1)$/ )
+		{
+			$is_valid = 0;
+			#print "\"is_new\" must be a 0 or 1.<br><br>\n";
+			push @error_list, {error => '"is_new" must be a 0 or 1.'};
+		}
+	}
+
+	if( $p eq "domain" ) {$domain = $form{$p};}
+
+	if( $p eq "path" )
+	{
+		$path = $form{$p};
+		$path =~ s/^\ +//g;
+		$path =~ s/\ +$//g;
+	}
+
+	if( $p eq "memory" )      { $memory      = $form{$p}; }
+	if( $p eq "dir_choice" )  { $dir_choice  = $form{$p}; }
+	if( $p eq "directories" ) { $directories = $form{$p}; }
+	if( $p eq "metahost" )    { $metahost    = $form{$p}; }
+	if( $p eq "metassl" )     { $metassl     = $form{$p}; }
+	if( $p eq "metaport" )    { $metaport    = $form{$p}; }
+	if( $p eq "metauser" )    { $metauser    = $form{$p}; }
+	if( $p eq "metapass" )    { $metapass    = $form{$p}; }
+  if( $p eq "metapath" )    { $metapath    = $form{$p}; }
+  if( $p eq "metalatency" ) { $metalatency = $form{$p}; }
+  if( $p eq "metatimeout" ) { $metatimeout = $form{$p}; }
+
+	if( $p eq "creditcards" )
+	{
+		$creditcards = $form{$p};
+		if( length( $creditcards ) > $MAX_LENGTH_DIRS )
+		{
+			$is_valid = 0;
+			#print "Total length of all credit cards must be less than " . $MAX_LENGTH_DIRS + 1 . " characters. Yours was a length of " . length($creditcards) . " characters.<br><br>\n";
+			push @error_list, {error => "Total length of all credit cards must be less than " . $MAX_LENGTH_DIRS + 1 . " characters. Yours was a length of " . length($creditcards) . " characters."};
+		}
+	}
+
+	if( $p eq "zipfile" ) {$zipfiles = $form{$p};}
+	if( $p eq "ext_choice" ) {$ext_choice = $form{$p};}
+	if( $p eq "extensions" ) { $extensions = $form{$p};}
+
+	if( $p =~ /^regex_[0-9]+$/ )
+	{
+		my $temp_regex = $p;
+		if( $form{$temp_regex} == 1 )
+		{
+			$temp_regex =~ s/^.*_//g;
+			push @regexes, $temp_regex;
+		}
+		else
+		{
+			#print "Invalid option for $temp_regex<br><br>\n";
+			push @error_list, {error => "Invalid option for $temp_regex"};
+			$is_valid = 0;
+		}
+	}
+	if( $p eq "url" ) {$url = $form{$p};}
+	if( $p eq "urluser" ) {$urluser = $form{$p};}
+	if( $p eq "urlpass" ) {$urlpass = $form{$p};}
+	if( $p eq "wait" ) {$delaytime = $form{$p};}
+
+	if( $p eq "description" )
+	{
+		$description = $form{$p};
+		if( $description > $MAX_LENGTH_DESCRIPTION )
+		{
+			$is_valid = 0;
+			#print "Length of description cannot exceed $MAX_LENGTH_DESCRIPTION.<br><br>\n";
+			push @error_list, {error => "Length of description cannot exceed $MAX_LENGTH_DESCRIPTION."};
+		}
+	}
+	if( $p eq "debug" )
+	{
+		$debug = $form{$p};
+		if( $debug < 0 || $debug > 3 )
+		{
+			$is_valid = 0;
+			#print "Log verbosity must either be 0, 1, 2, or 3.<br><br>\n";
+			push @error_list, {error => "Log verbosity must either be 0, 1, 2, or 3."};
+		}
+	}
+	if( $p eq "concurrent" )
+	{
+		$concurrent = $form{$p};
+		if( $concurrent < 1 || $concurrent > $MAX_CONCURRENT )
+		{
+			$is_valid = 0;
+			#print "Concurrent must be between 1 and $MAX_CONCURRENT.<br><br>\n";
+			push @error_list, {error => "Concurrent must be between 1 and $MAX_CONCURRENT."};
+		}
+	}
+
+	if( $p eq "db_choice" ) { $db_choice = $form{$p}; }
+	if( $p eq "databases" ) { $dbs = $form{$p}; }
+	if( $p eq "table_choice" ) { $table_choice = $form{$p}; }
+	if( $p eq "tables" ) { $tables = $form{$p}; }
+	if( $p eq "column_choice" ) { $column_choice = $form{$p}; }
+	if( $p eq "columns" ) { $columns = $form{$p}; }
+	if( $p eq "rows" ) { $rows = $form{$p}; }
+}
+
+#########################
+# NEW: Josh - 2018.07.10
+#########################
+if($emailsEnabled == 0)
+{
+    $emails = "";
+}
+if( $dopasswordupdate eq "1" && length( $password ) > $MAX_LENGTH_PASSWORD )
+{
+    $is_valid = 0;
+    #print "Password is too long. Limit it to $MAX_LENGTH_PASSWORD characters.<br><br>\n";
+    push @error_list, {error => "Password is too long. Limit it to $MAX_LENGTH_PASSWORD characters."};
+}
+
+if ($scantype eq "meta_agent" || $scantype eq "post_agent") {
+
+    if ($metauser eq "") { $is_valid = 0; push @error_list, {error => "Metasploit Username cannot be blank."};  }
+
+    if ($metapass eq "") { $is_valid = 0; push @error_list, {error => "Metasploit Password cannot be blank."}; }
+
+    if ($metaport eq "") { $is_valid = 0; push @error_list, {error => "You must supply a port on which metasploit is listening."}; }
+
+    if ($metahost eq "") { $is_valid = 0; push @error_list, {error => "You must supply the host on which metasploit is listening."}; }
+
+    if ($metapath eq "") { $is_valid = 0; push @error_list, {error => "You must supply the path on the metasploit system to the OpenDLP files, which will be injected into the target system."}; }
+
+    if ($path     eq "") { $is_valid = 0; push @error_list, {error => "Path cannot be blank."}; }
+
+  if( $memory != 0.01 && $memory != 0.02 && $memory != 0.05 && $memory != 0.1 && $memory != 0.15 && $memory != 0.2 && $memory != 0.25 )  {
+    $is_valid = 0;
+    push @error_list, {error => "Memory is an invalid number. It must be 1%, 2%, 5%, 10%, 15%, 20%, or 25%."};
+  }
+
+    if (length( $path ) > $MAX_LENGTH_PATH ) { $is_valid = 0; push @error_list, {error => "Path is too long. Limit it to $MAX_LENGTH_PATH characters."}; }
+
+    if ($dir_choice !~ /^(everything|ignore|allow)$/ ) { $is_valid = 0; push @error_list, {error => "Select a radio option for the directories."}; }
+
+    if (length( $directories ) > $MAX_LENGTH_DIRS ) { $is_valid = 0; push @error_list, {error => "Total length of all directories must be less than " . $MAX_LENGTH_DIRS + 1 . " characters. Yours was a length of " . length($directories) . " characters."}; }
+  
+    if (length( $zipfiles ) > $MAX_LENGTH_DIRS ) { $is_valid = 0; push @error_list, {error => "Total length of all zip extensions must be less than " . $MAX_LENGTH_DIRS + 1 . " characters. Yours was a length of " . length($zipfiles) . " characters"}; }
+  
+    if ($ext_choice !~ /^(everything|ignore|allow)$/ ) { $is_valid = 0; push @error_list, {error => "Select a radio option for the file extensions."}; }
+  
+    if (length( $extensions ) > $MAX_LENGTH_EXTS ) { $is_valid = 0; push @error_list, {error => "Total length of all file extensions must be less than " . $MAX_LENGTH_EXTS + 1 . " characters. Yours was a length of " . length($extensions) . " characters."}; }
+
+  my @temp_exts = split( "\r\n", $extensions );
+  my $line_exts = 1;
+  foreach my $temp_ext( @temp_exts )
+  {
+    chomp $temp_ext;
+    if( $temp_ext eq "" || $temp_ext =~ /^\ +$/ )
+    {
+      push @error_list, {error => "Blank or empty file extension on line $line_exts"};
+      $is_valid = 0;
+    }
+    $line_exts++;
+  }
+
+    if (length($url) > $MAX_LENGTH_URL) { $is_valid = 0; push @error_list, {error => "Length of phone home URL must be less than " . $MAX_LENGTH_URL + 1 . " characters. Yours was a length of " . length($url) . " characters."}; }
+
+    if ($url !~ /^http(s|):\/\//) { $is_valid = 0; push @error_list, {error => "Phone home URL must start with \"http://\" or \"https://\"."}; }
+
+    if (length($urluser) > $MAX_LENGTH_URL_USER) { $is_valid = 0; push @error_list, {error => "Length of phone home URL\'s username must be less than " . $MAX_LENGTH_URL_USER + 1 . " characters."}; }
+
+    if ($urluser eq "") { $is_valid = 0; push @error_list, {error => "Phone home URL's username cannot be blank."}; }
+
+    # NEW: Josh 2018.07.22
+    if($dourlpasswordupdate eq "1" && length($urlpass) > $MAX_LENGTH_URL_PASS){ $is_valid = 0; push @error_list, {error => "Length of phone home URL's password must be less than " . $MAX_LENGTH_URL_PASS + 1 . " characters."}; }
+    # NEW: Josh 2018.07.22
+    if ($dourlpasswordupdate eq "1" && $urlpass eq "") { $is_valid = 0; push @error_list, {error => "Phone home URL's password cannot be blank."}; }
+
+    if ($delaytime > $MAX_DELAYTIME) { $is_valid = 0; push @error_list, {error => "Maximum delay time is $MAX_DELAYTIME."}; }
+    
+    if ($delaytime !~ /^[0-9]+$/) { $is_valid = 0; push @error_list, {error => "Delay time must be a digit."}; }
+  
+  
+}
+elsif( $scantype eq "win_agent" )
+{
+	if( $username eq "" )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Username cannot be blank."};
+	}
+	if( length( $smbhash ) > $MAX_LENGTH_SMBHASH )
+	{
+		$is_valid = 0;
+		$smbhash = "";
+		push @error_list, {error => "SMBHash is too long. Limit it to $MAX_LENGTH_SMBHASH characters."};
+	}
+	elsif($smbhash !~ m/[\w]{32}:[\w]{32}/ && $smbhash ne "" )
+	{
+		$is_valid = 0;
+		$smbhash = "";
+		push @error_list, {error => "SMBHash is invalid."};
+	}
+
+	if( $domain eq "" )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Domain/Workgroup cannot be blank."};
+	}
+
+	if( length( $domain ) > $MAX_LENGTH_DOMAIN )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Domain is too long. Limit it to $MAX_LENGTH_DOMAIN characters."};
+	}
+
+	if( $path eq "" )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Path cannot be blank."};
+	}
+
+	if( $memory != 0.01 && $memory != 0.02 && $memory != 0.05 && $memory != 0.1 && $memory != 0.15 && $memory != 0.2 && $memory != 0.25 )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Memory is an invalid number. It must be 1%, 2%, 5%, 10%, 15%, 20%, or 25%."};
+	}
+
+	if( length( $path ) > $MAX_LENGTH_PATH )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Path is too long. Limit it to $MAX_LENGTH_PATH characters."};
+	}
+
+	if( $dir_choice !~ /^(everything|ignore|allow)$/ )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Select a radio option for the directories."};
+	}
+
+	if( length( $directories ) > $MAX_LENGTH_DIRS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all directories must be less than " . $MAX_LENGTH_DIRS + 1 . " characters. Yours was a length of " . length($directories) . " characters."};
+	}
+
+	if( length( $zipfiles ) > $MAX_LENGTH_DIRS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all zip extensions must be less than " . $MAX_LENGTH_DIRS + 1 . " characters. Yours was a length of " . length($zipfiles) . " characters."};
+	}
+
+	if( $ext_choice !~ /^(everything|ignore|allow)$/ )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Select a radio option for the file extensions."};
+	}
+
+	if( length( $extensions ) > $MAX_LENGTH_EXTS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all file extensions must be less than " . $MAX_LENGTH_EXTS + 1 . " characters. Yours was a length of " . length($extensions) . " characters."};
+	}
+
+	my @temp_exts = split( "\r\n", $extensions );
+	my $line_exts = 1;
+	foreach my $temp_ext( @temp_exts )
+	{
+		chomp $temp_ext;
+		if( $temp_ext eq "" || $temp_ext =~ /^\ +$/ )
+		{
+			push @error_list, {error => "Blank or empty file extension on line $line_exts"};
+			$is_valid = 0;
+		}
+		$line_exts++;
+	}
+
+	if( length( $url ) > $MAX_LENGTH_URL )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Length of phone home URL must be less than " . $MAX_LENGTH_URL + 1 . " characters. Yours was a length of " . length($url) . " characters."};
+	}
+	if( $url !~ /^http(s|):\/\// )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Phone home URL must start with \"http://\" or \"https://\"."};
+	}
+
+	if( length( $urluser ) > $MAX_LENGTH_URL_USER )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Length of phone home URL's username must be less than " . $MAX_LENGTH_URL_USER + 1 . " characters."};
+	}
+	if( $urluser eq "" )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Phone home URL's username cannot be blank."};
+	}
+
+	#NEW: Josh 2018.07.22
+	if( $dourlpasswordupdate eq "1" && length( $urlpass ) > $MAX_LENGTH_URL_PASS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Length of phone home URL's password must be less than " . $MAX_LENGTH_URL_PASS + 1 . " characters."};
+	}
+	if( $dourlpasswordupdate eq "1" && $urlpass eq "" )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Phone home URL's password cannot be blank."};
+	}
+	#####################
+	
+	if( $delaytime > $MAX_DELAYTIME )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Maximum delay time is $MAX_DELAYTIME."};
+	}
+	if( $delaytime !~ /^[0-9]+$/ )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Delay time must be a digit."};
+	}
+}
+elsif( $scantype eq "win_agentless" )
+{
+	if( $username eq "" )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Username cannot be blank."};
+	}
+	if( length( $smbhash ) > $MAX_LENGTH_SMBHASH )
+	{
+		$is_valid = 0;
+		$smbhash = "";
+		push @error_list, {error => "SMBHash is too long. Limit it to $MAX_LENGTH_SMBHASH characters."};
+	}
+	elsif($smbhash !~ m/[\w]{32}:[\w]{32}/ && $smbhash ne "" )
+	{
+		$is_valid = 0;
+		$smbhash = "";
+		push @error_list, {error => "SMBHash is invalid."};
+	}
+
+	if( $domain eq "" )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Domain/Workgroup cannot be blank."};
+	}
+
+	if( length( $domain ) > $MAX_LENGTH_DOMAIN )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Domain is too long. Limit it to $MAX_LENGTH_DOMAIN characters."};
+	}
+
+	if( $memory != 0.01 && $memory != 0.02 && $memory != 0.05 && $memory != 0.1 && $memory != 0.15 && $memory != 0.2 && $memory != 0.25 )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Memory is an invalid number. It must be 1%, 2%, 5%, 10%, 15%, 20%, or 25%."};
+	}
+
+	if( $dir_choice !~ /^(everything|ignore|allow)$/ )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Select a radio option for the directories."};
+	}
+
+	if( length( $directories ) > $MAX_LENGTH_DIRS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all directories must be less than " . $MAX_LENGTH_DIRS + 1 . " characters. Yours was a length of " . length($directories) . " characters."};
+	}
+
+	if( length( $zipfiles ) > $MAX_LENGTH_DIRS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all zip extensions must be less than " . $MAX_LENGTH_DIRS + 1 . " characters. Yours was a length of " . length($zipfiles) . " characters."};
+	}
+
+	if( $ext_choice !~ /^(everything|ignore|allow)$/ )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Select a radio option for the file extensions."};
+	}
+
+	if( length( $extensions ) > $MAX_LENGTH_EXTS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all file extensions must be less than " . $MAX_LENGTH_EXTS + 1 . " characters. Yours was a length of " . length($extensions) . " characters."};
+	}
+
+	my @temp_exts = split( "\r\n", $extensions );
+	my $line_exts = 1;
+	foreach my $temp_ext( @temp_exts )
+	{
+		chomp $temp_ext;
+		if( $temp_ext eq "" || $temp_ext =~ /^\ +$/ )
+		{
+			push @error_list, {error => "Blank or empty file extension on line $line_exts"};
+			$is_valid = 0;
+		}
+		$line_exts++;
+	}
+}
+elsif( $scantype eq "win_share" ) # TODO - need pass?
+{
+    # TODO: do we need to check username?
+
+    if( length( $smbhash ) > $MAX_LENGTH_SMBHASH )
+	{
+		$is_valid = 0;
+		$smbhash = "";
+		push @error_list, {error => "SMBHash is too long. Limit it to $MAX_LENGTH_SMBHASH characters."};
+	}
+	elsif($smbhash !~ m/[\w]{32}:[\w]{32}/ && $smbhash ne "" )
+	{
+		$is_valid = 0;
+		$smbhash = "";
+		push @error_list, {error => "SMBHash is invalid."};
+	}
+
+    # TODO: check if domain is empty?
+
+	if( length( $domain ) > $MAX_LENGTH_DOMAIN )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Domain is too long. Limit it to $MAX_LENGTH_DOMAIN characters."};
+	}
+
+	if( $memory != 0.01 && $memory != 0.02 && $memory != 0.05 && $memory != 0.1 && $memory != 0.15 && $memory != 0.2 && $memory != 0.25 )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Memory is an invalid number. It must be 1%, 2%, 5%, 10%, 15%, 20%, or 25%."};
+	}
+
+	if( $dir_choice !~ /^(everything|ignore|allow)$/ )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Select a radio option for the directories."};
+	}
+
+	if( length( $directories ) > $MAX_LENGTH_DIRS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all directories must be less than " . $MAX_LENGTH_DIRS + 1 . " characters. Yours was a length of " . length($directories) . " characters."};
+	}
+
+	if( length( $zipfiles ) > $MAX_LENGTH_DIRS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all zip extensions must be less than " . $MAX_LENGTH_DIRS + 1 . " characters. Yours was a length of " . length($zipfiles) . " characters."};
+	}
+
+	if( $ext_choice !~ /^(everything|ignore|allow)$/ )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Select a radio option for the file extensions."};
+	}
+
+	if( length( $extensions ) > $MAX_LENGTH_EXTS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all file extensions must be less than " . $MAX_LENGTH_EXTS + 1 . " characters. Yours was a length of " . length($extensions) . " characters."};
+	}
+
+	my @temp_exts = split( "\r\n", $extensions );
+	my $line_exts = 1;
+	foreach my $temp_ext( @temp_exts )
+	{
+		chomp $temp_ext;
+		if( $temp_ext eq "" || $temp_ext =~ /^\ +$/ )
+		{
+			push @error_list, {error => "Blank or empty file extension on line $line_exts"};
+			$is_valid = 0;
+		}
+		$line_exts++;
+	}
+}
+elsif( $scantype eq "unix_agentless" )
+{
+	if( $username eq "" )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Username cannot be blank."};
+	}
+	
+	if( $memory != 0.01 && $memory != 0.02 && $memory != 0.05 && $memory != 0.1 && $memory != 0.15 && $memory != 0.2 && $memory != 0.25 )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Memory is an invalid number. It must be 1%, 2%, 5%, 10%, 15%, 20%, or 25%."};
+	}
+
+	if( $dir_choice !~ /^(everything|ignore|allow)$/ )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Select a radio option for the directories."};
+	}
+
+	if( length( $directories ) > $MAX_LENGTH_DIRS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all directories must be less than " . $MAX_LENGTH_DIRS + 1 . " characters. Yours was a length of " . length($directories) . " characters."};
+	}
+
+	if( length( $zipfiles ) > $MAX_LENGTH_DIRS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all zip extensions must be less than " . $MAX_LENGTH_DIRS + 1 . " characters. Yours was a length of " . length($zipfiles) . " characters."};
+	}
+
+	if( $ext_choice !~ /^(everything|ignore|allow)$/ )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Select a radio option for the file extensions."};
+	}
+
+	if( length( $extensions ) > $MAX_LENGTH_EXTS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all file extensions must be less than " . $MAX_LENGTH_EXTS + 1 . " characters. Yours was a length of " . length($extensions) . " characters."};
+	}
+
+	my @temp_exts = split( "\r\n", $extensions );
+	my $line_exts = 1;
+	foreach my $temp_ext( @temp_exts )
+	{
+		chomp $temp_ext;
+		if( $temp_ext eq "" || $temp_ext =~ /^\ +$/ )
+		{
+			push @error_list, {error => "Blank or empty file extension on line $line_exts"};
+			$is_valid = 0;
+		}
+		$line_exts++;
+	}
+}
+elsif( $scantype =~ /^(mssql_agentless|mysql_agentless)$/ )
+{
+	if( $username eq "" )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Username cannot be blank."};
+	}
+	if( $db_choice !~ /^(everything|ignore|allow)$/ )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Select a radio option for the databases."};
+	}
+
+	if( $table_choice !~ /^(everything|ignore|allow)$/ )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Select a radio option for the tables."};
+	}
+
+	if( $column_choice !~ /^(everything|ignore|allow)$/ )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Select a radio option for the columns."};
+	}
+
+	if( length( $dbs ) > $MAX_LENGTH_DATABASES )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all databases must be less than " . $MAX_LENGTH_DATABASES + 1 . " characters. Yours was a length of " . length($dbs) . " characters."};
+	}
+
+	if( length( $tables ) > $MAX_LENGTH_TABLES )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all tables must be less than " . $MAX_LENGTH_TABLES + 1 . " characters. Yours was a length of " . length($tables) . " characters."};
+	}
+
+	if( length( $columns ) > $MAX_LENGTH_COLUMNS )
+	{
+		$is_valid = 0;
+		push @error_list, {error => "Total length of all columns must be less than " . $MAX_LENGTH_COLUMNS + 1 . " characters. Yours was a length of " . length($columns) . " characters."};
+	}
+
+	if( $rows < 0 || $rows > $MAX_ROWS )
+	{
+		$is_valid = 0;
+		# TODO: this number should probably belong in a variable...
+		push @error_list, {error => "Rows is an invalid number. It must be a non-negative integer less than 9223372036854775808."};
+	}
+}
+if( $scantype eq "mssql_agentless" )
+{
+	if( $domain ne "" )
+	{
+		$username = $domain . "\\" . $username;
+	}
+	# TODO: should we error out if domain is blank?
+	# also TODO - everytime we modify, domain is appended to old domain value... runaway
+}
+
+my $length_regexes = @regexes;
+if( $length_regexes < 1 )
+{
+	push @error_list, {error => "No regular expressions selected."};
+	$is_valid = 0;
+}
+
+if( $is_valid )
+{
+	if( $mask eq "" )
+	{
+		$mask = 0;
+	}
+	if ($metassl eq "") { $metassl = 1; }
+
+	$view_template->param(profile => $profile);
+    $view_template->param(scantype => $scantype);
+
+	if( $is_new == 1 )
+	{
+        $view_template->param(mainpageheading => "New Profile Submission:");
+	
+		my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+
+		my $string = "SELECT profile from profiles where profile=?;";
+		my $sth = $dbh->prepare( $string );
+		$sth->execute( $profile );
+		my $results = $sth->fetchrow_arrayref();
+		if( $$results[0] eq "" )
+		{
+			my $regex_db = "";
+			my $length_regex = @regexes;
+			my $x_regex = 0;
+			while( $x_regex < $length_regex )
+			{
+				$regex_db .= "$regexes[$x_regex]";
+				if( $x_regex < ($length_regex - 1))
+				{
+					$regex_db .= ",";
+				}
+				$x_regex++;
+			}
+			
+			if ($scantype eq "meta_agent" || $scantype eq "post_agent") { # TODO GPG encrypt passwords... and html template stuff...
+        #########################
+        # NEW: Josh - 2018.05.10
+        #########################
+        $string = "INSERT INTO profiles SET profile=?,exts=?,ignore_exts=?,dirs=?,ignore_dirs=?,regex=?,path=?," .
+                  "phonehomeurl=?,phonehomeuser=?,phonehomepass=?,delaytime=?,description=?,debug=?,concurrent=?," .
+                  "creditcards=?,zipfiles=?,memory=?,mask=?,scantype=?,metahost=?,metaport=?,metauser=?,".
+                  "metapass=?,metapath=?,metalatency=?,metatimeout=?,metassl=?,email_addr=?;";
+        $sth = $dbh->prepare($string);
+        $sth->execute($profile, $extensions, $ext_choice, $directories, $dir_choice, $regex_db, $path, 
+                      $url, $urluser, $urlpass, $delaytime, $description, $debug, $concurrent, 
+                      $creditcards, $zipfiles, $memory, $mask, $scantype, $metahost, $metaport, $metauser, 
+                      $metapass, $metapath, $metalatency, $metatimeout, $metassl, $emails );
+
+				print "<heading>New Profile Submission:</heading><br><br>\n";
+				print "<table class=sample>\n";
+				print "<tr><td width=200>Profile Name</td><td>$profile</td></tr>\n";
+				print "<tr><td>Scan type</td><td>$scantype</td></tr>\n";
+				#########################
+                # NEW: Josh - 2018.05.10
+                #########################
+                if(length($emails) != 0)
+                {
+                    print "<tr><td>Notify</td><td>$emails</td></tr>\n";
+                }
+			
+				my $metahost_copy    = filter($metahost);
+				my $metaport_copy    = filter($metaport);
+				my $metauser_copy    = filter($metauser);
+				my $metapass_copy    = filter($metapass);
+        my $metapath_copy    = filter($metapath);
+        my $metalatency_copy = filter($metalatency);
+        my $metatimeout_copy = filter($metatimeout);        
+
+				print "<tr><td>Metasploit Host</td><td>$metahost_copy</td></tr>\n";
+				print "<tr><td>Metasploit Port</td><td>$metaport_copy</td></tr>\n";
+				print "<tr><td>Using SSL</td><td>";
+				if ($metassl == 1) { print "Yes";}
+				elsif ($metassl == 0) { print "No"; }
+				print "</td></tr>\n";
+				print "<tr><td>Metasploit User</td><td>$metauser_copy</td></tr>\n";
+				print "<tr><td>Metasploit Password</td><td>$metapass_copy</td></tr>\n";
+				print "<tr><td>Path to OpenDLP files on Metasploit system</td><td>$metapath_copy</td></tr>\n";
+        print "<tr><td>Latency (used to throttle CPU usage when deploying)</td><td>$metalatency_copy</td></tr>\n";
+        print "<tr><td>Metasploit Timeout (Time to wait for response before giving up)</td><td>$metatimeout_copy</td></tr>\n";
+        
+				my $path_copy = filter( $path );
+				print "<tr><td>Installation Path</td><td>$path_copy</td></tr>\n";
+				print "<tr><td>Memory Limit</td><td>" . $memory * 100 . "%</td></tr>\n";
+				print "<tr><td>Mask Sensitive Data</td><td>";
+				if( $mask == 1 ) { print "Yes"; }
+				elsif( $mask == 0 ) { print "No"; }
+				print "</td></tr>\n";
+				print "<tr><td>Scan directories</td><td>$dir_choice</td></tr>\n";
+				my $directories_copy = filter( $directories );
+				print "<tr><td>Directories</td><td>$directories_copy</td></tr>\n";
+				print "<tr><td>Scan file extensions</td><td>$ext_choice</td></tr>\n";
+				my $extensions_copy = filter( $extensions );
+				print "<tr><td>Extensions</td><td>$extensions_copy</td></tr>\n";
+				print "<tr><td>Regular Expressions</td><td>";
+				my @regex_lookups = split(",", $regex_db );
+				my $length_regex_lookups = @regex_lookups;
+				my $regex_lookups_x = 0;
+				foreach( @regex_lookups )
+				{
+					$string = "SELECT name from regexes where number=?;";
+					$sth = $dbh->prepare($string);
+					$sth->execute($_);
+					my $results = $sth->fetchrow_arrayref();
+					if( $$results[0] ne "" )
+					{
+						print "$$results[0]";
+					}
+					else
+					{
+						print "<font face=red>Cannot find regex #" . $_ . "</font>";
+					}
+					if( $regex_lookups_x < ($length_regex_lookups - 1 ))
+					{
+						print ", ";
+					}
+					$regex_lookups_x++;
+				}
+
+				print "</td></tr>\n";
+				my $cc_copy = filter( $creditcards );
+				print "<tr><td>Credit Cards</td><td>$cc_copy</td></tr>\n";
+				my $zip_copy = filter( $zipfiles );
+				print "<tr><td>Zip File Extensions</td><td>$zip_copy</td></tr>\n";
+				my $urluser_copy = filter( $urluser );
+				print "<tr><td>Phone home URL username</td><td>$urluser_copy</td></tr>\n";
+				print "<tr><td>Phone home URL password</td><td>****************</td></tr>\n";
+				print "<tr><td>Phone home delay</td><td>$delaytime</td></tr>\n";
+				print "<tr><td>Concurrent deployments</td><td>$concurrent</td></tr>\n";
+				my $description_copy = filter( $description );
+				print "<tr><td>Windows Service description</td><td>$description_copy</td></tr>\n";
+				print "<tr><td>Log Verbosity</td><td>$debug</td></tr>\n";
+				print "</table>\n";
+				
+			}
+			elsif( $scantype eq "win_agent")
+			{
+				#########################
+                # NEW: Josh - 2018.07.22
+                #########################
+                $view_template->param(winagent_table => "1");
+                
+				$string = "INSERT INTO profiles SET profile=?,username=?,password=?,domain=?,exts=?,ignore_exts=?,dirs=?,ignore_dirs=?,regex=?,path=?,phonehomeurl=?,phonehomeuser=?,phonehomepass=?,delaytime=?,description=?,debug=?,concurrent=?,creditcards=?,zipfiles=?,memory=?,mask=?,hash=?,scantype=?, email_addr=?, gpgpassword=?, gpgphonehomepass=?;";
+				$sth = $dbh->prepare($string);
+				
+				#encode first... mostly because it's a pain to figure out how to feed it to GPG otherwise for all cases
+				my $password_encoded = encode_base64($password);
+				my $urlpass_encoded = encode_base64($urlpass);
+				my $lt = localtime();
+
+				################################
+				#Encrypt the password
+				################################
+				my ($stdout, $stderr) = capture {
+                    system("printf \"$password_encoded\" | gpg --symmetric --homedir /home/www-data/.gnupg --batch --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+				};
+
+				if($stderr ne "")   { warn "[$lt] GPG ran into an issue: $stderr"; }
+                else                { warn "[$lt] The password was sucessfully encrypted"; }
+                
+                ################################
+				#Encrypt the phone home password
+				################################
+				my ($stdout_2, $stderr_2) = capture {
+                    system("printf \"$urlpass_encoded\" | gpg --symmetric --homedir /home/www-data/.gnupg --batch --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+				};
+				if($stderr_2 ne "")   { warn "[$lt] GPG ran into an issue: $stderr_2"; }
+                else                { warn "[$lt] The phone home password was sucessfully encrypted"; }
+				
+				# TODO what to do if $stdout is empty? (when gpg fails)
+				# if stderror is empty and stdout is empty then ...
+
+                $sth->execute($profile, $username, ":)", $domain, $extensions, $ext_choice, $directories, $dir_choice, $regex_db, $path, $url, $urluser, ":)", $delaytime, $description, $debug, $concurrent, $creditcards, $zipfiles, $memory, $mask, $smbhash, $scantype, $emails, $stdout,$stdout_2);
+
+                if(length($emails) != 0)
+                {
+                    $view_template->param(emails => $emails);
+                }
+				$view_template->param(username => filter($username));
+				$view_template->param(smbhash => filter($smbhash));
+				$view_template->param(domain => filter($domain));
+				$view_template->param(path => filter($path));
+				$view_template->param(memlim_value => $memory * 100 . '%' );
+				$view_template->param(mask_value => ($mask == 1 ? "Yes" : "No") );
+				$view_template->param(dir_choice => $dir_choice);
+				$view_template->param(directories => filter($directories));
+				$view_template->param(ext_choice => $ext_choice);
+				$view_template->param(extensions => filter($extensions));
+
+				my @regex_lookups = split(",", $regex_db );
+				my $length_regex_lookups = @regex_lookups;
+				my $regex_lookups_x = 0;
+				my $regex_list = "";
+				foreach( @regex_lookups )
+				{
+					$string = "SELECT name from regexes where number=?;";
+					$sth = $dbh->prepare($string);
+					$sth->execute($_);
+					my $results = $sth->fetchrow_arrayref();
+					if( $$results[0] ne "" )
+					{
+						$regex_list .= "$$results[0]";
+					}
+					else
+					{
+						$regex_list .= "<font face=red>Cannot find regex #" . $_ . "</font>";
+					}
+					if( $regex_lookups_x < ($length_regex_lookups - 1 ))
+					{
+						$regex_list .= ", ";
+					}
+					$regex_lookups_x++;
+				}
+				$view_template->param(regex_list => $regex_list);
+				$view_template->param(creditcards => filter($creditcards));
+				$view_template->param(zipfiles => filter($zipfiles));
+				$view_template->param(urluser => filter($urluser));
+				$view_template->param(delaytime => $delaytime);
+				$view_template->param(concurrent => $concurrent);
+				$view_template->param(description => filter($description));
+				$view_template->param(debug => $debug);
+			}
+			elsif( $scantype eq "win_agentless" || $scantype eq "win_share" )
+			{
+				#########################
+                # NEW: Josh - 2018.07.22
+                #########################
+                $view_template->param(winsmb_table => "1");
+                
+				$string = "INSERT INTO profiles SET profile=?,username=?,password=?,domain=?,exts=?,ignore_exts=?,dirs=?,ignore_dirs=?,regex=?,debug=?,concurrent=?,creditcards=?,zipfiles=?,memory=?,mask=?,hash=?,scantype=?,email_addr=?,gpgpassword=?;";
+				$sth = $dbh->prepare($string);
+				
+				#encode password first... mostly because it's a pain to figure out how to feed it to GPG otherwise for all cases
+				my $password_encoded = encode_base64($password);
+
+				my ($stdout, $stderr) = capture {
+                    #system("printf \"$password_encoded\" | gpg --batch -er $gpgrecipientname --homedir /home/www-data/.gnupg");
+                    system("printf \"$password_encoded\" | gpg --symmetric --homedir /home/www-data/.gnupg --batch --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+				};
+				
+				my $lt = localtime();
+				if($stderr ne "")
+                {
+                    warn "[$lt] GPG ran into an issue: $stderr";
+                }
+                else
+                {
+                    warn "[$lt] The password was sucessfully encrypted";
+                }
+				
+				# TODO what to do if $stdout is empty? (when gpg fails)
+				# if stderror is empty and stdout is empty then ...
+				
+				$sth->execute($profile, $username, ":)", $domain, $extensions, $ext_choice, $directories, $dir_choice, $regex_db, $debug, $concurrent, $creditcards, $zipfiles, $memory, $mask, $smbhash, $scantype, $emails, $stdout );
+
+                if(length($emails) != 0)
+                {
+                    $view_template->param(emails => $emails);
+                }
+                $view_template->param(username => filter($username));
+				$view_template->param(smbhash => filter($smbhash));
+				$view_template->param(domain => filter($domain));
+				$view_template->param(memlim_value => $memory * 100 . '%' );
+				$view_template->param(mask_value => ($mask == 1 ? "Yes" : "No") );
+				$view_template->param(dir_choice => $dir_choice);
+				$view_template->param(directories => filter($directories));
+				$view_template->param(ext_choice => $ext_choice);
+				$view_template->param(extensions => filter($extensions));
+
+				my @regex_lookups = split(",", $regex_db );
+				my $length_regex_lookups = @regex_lookups;
+				my $regex_lookups_x = 0;
+				my $regex_list = "";
+				foreach( @regex_lookups )
+				{
+					$string = "SELECT name from regexes where number=?;";
+					$sth = $dbh->prepare($string);
+					$sth->execute($_);
+					my $results = $sth->fetchrow_arrayref();
+					if( $$results[0] ne "" )
+					{
+						$regex_list .= "$$results[0]";
+					}
+					else
+					{
+						$regex_list .= "<font face=red>Cannot find regex #" . $_ . "</font>";
+					}
+					if( $regex_lookups_x < ($length_regex_lookups - 1 ))
+					{
+						$regex_list .= ", ";
+					}
+					$regex_lookups_x++;
+				}
+                $view_template->param(regex_list => $regex_list);
+                
+                $view_template->param(creditcards => filter($creditcards));
+                $view_template->param(zipfiles => filter($zipfiles));
+                $view_template->param(concurrent => $concurrent);
+                $view_template->param(debug => $debug);
+			}
+			elsif( $scantype eq "unix_agentless" ) # TODO: html template stuff
+			{
+				#########################
+                # NEW: Josh - 2018.07.23
+                #########################
+                $view_template->param(unixagentless_table => "1");
+                
+				$string = "INSERT INTO profiles SET profile=?,username=?,password=?,exts=?,ignore_exts=?,dirs=?,ignore_dirs=?,regex=?,debug=?,concurrent=?,creditcards=?,zipfiles=?,memory=?,mask=?,scantype=?,email_addr=?,gpgpassword=?;";
+				$sth = $dbh->prepare($string);
+				
+				#encode password first... mostly because it's a pain to figure out how to feed it to GPG otherwise for all cases
+				my $password_encoded = encode_base64($password);
+
+				my ($stdout, $stderr) = capture {
+                    #system("printf \"$password_encoded\" | gpg --batch -er $gpgrecipientname --homedir /home/www-data/.gnupg");
+                    system("printf \"$password_encoded\" | gpg --symmetric --homedir /home/www-data/.gnupg --batch --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+				};
+				
+				my $lt = localtime();
+				if($stderr ne "")
+                {
+                    warn "[$lt] GPG ran into an issue: $stderr";
+                }
+                else
+                {
+                    warn "[$lt] The password was sucessfully encrypted";
+                }
+				
+				# TODO what to do if $stdout is empty? (when gpg fails)
+				# if stderror is empty and stdout is empty then ...
+				
+				$sth->execute($profile, $username, ":)", $extensions, $ext_choice, $directories, $dir_choice, $regex_db, $debug, $concurrent, $creditcards, $zipfiles, $memory, $mask, $scantype, $emails,$stdout);
+
+                if(length($emails) != 0)
+                {
+                    $view_template->param(emails => $emails);
+                }
+				
+				$view_template->param(username => filter($username));
+				$view_template->param(memlim_value => $memory * 100 . '%' );
+				$view_template->param(mask_value => ($mask == 1 ? "Yes" : "No") );
+				$view_template->param(dir_choice => $dir_choice);
+				$view_template->param(directories => filter($directories));
+				$view_template->param(ext_choice => $ext_choice);
+				$view_template->param(extensions => filter($extensions));
+
+				my @regex_lookups = split(",", $regex_db );
+				my $length_regex_lookups = @regex_lookups;
+				my $regex_lookups_x = 0;
+				my $regex_list = "";
+				foreach( @regex_lookups )
+				{
+					$string = "SELECT name from regexes where number=?;";
+					$sth = $dbh->prepare($string);
+					$sth->execute($_);
+					my $results = $sth->fetchrow_arrayref();
+					if( $$results[0] ne "" )
+					{
+						$regex_list .= "$$results[0]";
+					}
+					else
+					{
+						$regex_list .= "<font face=red>Cannot find regex #" . $_ . "</font>";
+					}
+					if( $regex_lookups_x < ($length_regex_lookups - 1 ))
+					{
+						$regex_list .= ", ";
+					}
+					$regex_lookups_x++;
+				}
+
+				$view_template->param(regex_list => $regex_list);
+				$view_template->param(creditcards => filter($creditcards));
+				$view_template->param(zipfiles => filter($zipfiles));
+				$view_template->param(concurrent => $concurrent);
+				$view_template->param(debug => $debug);
+			}
+			elsif( $scantype =~ /^(mssql_agentless|mysql_agentless)$/ )
+			{
+				#########################
+                # NEW: Josh - 2018.07.23
+                #########################
+                $view_template->param(database_table => "1");
+                
+                $string = "INSERT INTO profiles SET profile=?,username=?,password=?,regex=?,debug=?,concurrent=?,creditcards=?,mask=?,scantype=?,ignore_dbs=?,dbs=?,ignore_tables=?,tables=?,ignore_columns=?,columns=?,rows=?,email_addr=?,gpgpassword=?;";
+                
+                #encode password first... mostly because it's a pain to figure out how to feed it to GPG otherwise for all cases
+				my $password_encoded = encode_base64($password);
+
+				my ($stdout, $stderr) = capture {
+                    system("printf \"$password_encoded\" | gpg --symmetric --homedir /home/www-data/.gnupg --batch --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+				};
+				
+				my $lt = localtime();
+				if($stderr ne "")
+                {
+                    warn "[$lt] GPG ran into an issue: $stderr";
+                }
+                else
+                {
+                    warn "[$lt] The password was sucessfully encrypted";
+                }
+				
+				# TODO what to do if $stdout is empty? (when gpg fails)
+				# if stderror is empty and stdout is empty then ...
+
+				$sth = $dbh->prepare($string);
+				$sth->execute($profile, $username, ":)", $regex_db, $debug, $concurrent, $creditcards, $mask, $scantype, $db_choice, $dbs, $table_choice, $tables, $column_choice, $columns, $rows, $emails, $stdout );
+
+
+                if(length($emails) != 0)
+                {
+                    $view_template->param(emails => $emails);
+                }
+				
+				$view_template->param(username => filter($username));
+				$view_template->param(mask_value => ($mask == 1 ? "Yes" : "No") );
+                $view_template->param(db_choice => $db_choice);
+                $view_template->param(dbs => filter($dbs));
+                $view_template->param(table_choice => $table_choice);
+                $view_template->param(tables => filter($tables));
+                $view_template->param(column_choice => $column_choice);
+                $view_template->param(columns => filter($columns));
+                $view_template->param(rows => $rows);
+                
+				my @regex_lookups = split(",", $regex_db );
+				my $length_regex_lookups = @regex_lookups;
+				my $regex_lookups_x = 0;
+				my $regex_list = "";
+				foreach( @regex_lookups )
+				{
+					$string = "SELECT name from regexes where number=?;";
+					$sth = $dbh->prepare($string);
+					$sth->execute($_);
+					my $results = $sth->fetchrow_arrayref();
+					if( $$results[0] ne "" )
+					{
+						$regex_list .= "$$results[0]";
+					}
+					else
+					{
+						$regex_list .= "<font face=red>Cannot find regex #" . $_ . "</font>";
+					}
+					if( $regex_lookups_x < ($length_regex_lookups - 1 ))
+					{
+						$regex_list .= ", ";
+					}
+					$regex_lookups_x++;
+				}
+				$view_template->param(regex_list => $regex_list);
+				
+				$view_template->param(creditcards => filter($creditcards));
+				$view_template->param(concurrent => $concurrent);
+				$view_template->param(debug => $debug);
+			}
+		}
+		else
+		{
+			#print "Duplicate profile name found. Try again with a different profile name.\n\n";
+			push @error_list, {error => "Duplicate profile name found. Try again with a different profile name."};
+		}
+		$sth->finish;
+		$dbh->disconnect;
+	}
+	elsif( $is_new == 0 )
+	{
+        $view_template->param(mainpageheading => "Modified Profile Submission:");
+	
+		my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+		my $string = "SELECT profile from profiles where profile=?;";
+		my $sth = $dbh->prepare( $string );
+		$sth->execute( $profile );
+		my $results = $sth->fetchrow_arrayref();
+		if( $$results[0] ne "" )
+		{
+			my $regex_db = "";
+			my $length_regex = @regexes;
+			my $x_regex = 0;
+			while( $x_regex < $length_regex )
+			{
+				$regex_db .= "$regexes[$x_regex]";
+				if( $x_regex < ($length_regex - 1))
+				{
+					$regex_db .= ",";
+				}
+				$x_regex++;
+			}
+			
+      if ($scantype eq "meta_agent" || $scantype eq "post_agent") { # TODO: encrypt passwords... and html template stuff...
+        #########################
+        # NEW: Josh - 2018.05.10
+        #########################
+        $string = "UPDATE profiles SET profile=?,exts=?,ignore_exts=?,dirs=?,ignore_dirs=?,regex=?,path=?," .
+                  "phonehomeurl=?,phonehomeuser=?,phonehomepass=?,delaytime=?,description=?,debug=?,concurrent=?," .
+                  "creditcards=?,zipfiles=?,memory=?,mask=?,scantype=?,metahost=?,metaport=?,metauser=?," .
+                  "metapass=?,metapath=?,metalatency=?,metatimeout=?,metassl=?,email_addr=? WHERE profile=?;";
+				$sth = $dbh->prepare($string);
+				$sth->execute($profile, $extensions, $ext_choice, $directories, $dir_choice, $regex_db, $path, 
+				              $url, $urluser, $urlpass, $delaytime, $description, $debug, $concurrent, 
+				              $creditcards, $zipfiles, $memory, $mask, $scantype, $metahost, $metaport, $metauser, 
+				              $metapass, $metapath, $metalatency, $metatimeout, $metassl, $emails, $profile );
+
+				print "<heading>Modified Profile Submission:</heading><br><br>\n";
+				print "<table class=sample>\n";
+				print "<tr><td width=200>Profile Name</td><td>$profile</td></tr>\n";
+				print "<tr><td>Scan type</td><td>$scantype</td></tr>\n";
+				
+                #########################
+                # NEW: Josh - 2018.05.10
+                #########################
+                if(length($emails) != 0)
+                {
+                    print "<tr><td>Notifify</td><td>$emails</td></tr>\n";
+                }
+                
+				my $metahost_copy = filter($metahost);
+				my $metaport_copy = filter($metaport);
+				my $metauser_copy = filter($metauser);
+				my $metapass_copy = filter($metapass);
+        my $metapath_copy = filter($metapath);
+        my $metalatency_copy = filter($metalatency);
+        my $metatimeout_copy = filter($metatimeout);
+        
+				print "<tr><td>Metasploit Host</td><td>$metahost_copy</td></tr>\n";
+				print "<tr><td>Metasploit Port</td><td>$metaport_copy</td></tr>\n";
+				print "<tr><td>Using SSL</td><td>";
+				if ($metassl == 1) { print "Yes";}
+				elsif ($metassl == 0) { print "No"; }
+				print "</td></tr>\n";
+				print "<tr><td>Metasploit User</td><td>$metauser_copy</td></tr>\n";
+				print "<tr><td>Metasploit Password</td><td>$metapass_copy</td></tr>\n";
+				print "<tr><td>Path to OpenDLP files on Metasploit system</td><td>$metapath_copy</td></tr>\n";
+        print "<tr><td>Latency (used to throttle CPU usage when deploying)</td><td>$metalatency_copy</td></tr>\n";
+        print "<tr><td>Metasploit Timeout (Time to wait for response before giving up)</td><td>$metatimeout_copy</td></tr>\n";
+        
+				my $path_copy = filter( $path );
+				print "<tr><td>Installation Path</td><td>$path_copy</td></tr>\n";
+				print "<tr><td>Memory Limit</td><td>" . $memory * 100 . "%</td></tr>\n";
+				print "<tr><td>Mask Sensitive Data</td><td>";
+				if( $mask == 1 ) { print "Yes"; }
+				elsif( $mask == 0 ) { print "No"; }
+				print "</td></tr>\n";
+				print "<tr><td>Scan directories</td><td>$dir_choice</td></tr>\n";
+				my $directories_copy = filter( $directories );
+				print "<tr><td>Directories</td><td>$directories_copy</td></tr>\n";
+				print "<tr><td>Scan file extensions</td><td>$ext_choice</td></tr>\n";
+				my $extensions_copy = filter( $extensions );
+				print "<tr><td>Extensions</td><td>$extensions_copy</td></tr>\n";
+				print "<tr><td>Regular Expressions</td><td>";
+				my @regex_lookups = split(",", $regex_db );
+				my $length_regex_lookups = @regex_lookups;
+				my $regex_lookups_x = 0;
+				foreach( @regex_lookups )
+				{
+					$string = "SELECT name from regexes where number=?;";
+					$sth = $dbh->prepare($string);
+					$sth->execute($_);
+					my $results = $sth->fetchrow_arrayref();
+					if( $$results[0] ne "" )
+					{
+						print "$$results[0]";
+					}
+					else
+					{
+						print "<font face=red>Cannot find regex #" . $_ . "</font>";
+					}
+					if( $regex_lookups_x < ($length_regex_lookups - 1 ))
+					{
+						print ", ";
+					}
+					$regex_lookups_x++;
+				}
+
+				print "</td></tr>\n";
+				my $cc_copy = filter( $creditcards );
+				print "<tr><td>Credit Cards</td><td>$cc_copy</td></tr>\n";
+				my $zip_copy = filter( $zipfiles );
+				print "<tr><td>Zip File Extensions</td><td>$zip_copy</td></tr>\n";
+				my $urluser_copy = filter( $urluser );
+				print "<tr><td>Phone home URL username</td><td>$urluser_copy</td></tr>\n";
+				print "<tr><td>Phone home URL password</td><td>****************</td></tr>\n";
+				print "<tr><td>Phone home delay</td><td>$delaytime</td></tr>\n";
+				print "<tr><td>Concurrent deployments</td><td>$concurrent</td></tr>\n";
+				my $description_copy = filter( $description );
+				print "<tr><td>Windows Service description</td><td>$description_copy</td></tr>\n";
+				print "<tr><td>Log Verbosity</td><td>$debug</td></tr>\n";
+				print "</table>\n";
+            }
+			elsif( $scantype eq "win_agent")
+			{
+				#########################
+                # NEW: Josh - 2018.07.22
+                #########################
+                $view_template->param(winagent_table => "1");
+                my $lt = localtime();
+                
+                if( $dopasswordupdate eq "1" )
+                {   ################################
+                    #Encrypt the profile password
+                    ################################
+                    $string = "UPDATE profiles SET gpgpassword=? WHERE profile=?;";
+                    $sth = $dbh->prepare($string);
+                    my $password_encoded = encode_base64($password);
+                    
+                    my ($stdout, $stderr) = capture {
+                        system("printf \"$password_encoded\" | gpg --symmetric --homedir /home/www-data/.gnupg --batch --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+                    };
+                    
+                    if($stderr ne "")   { warn "[$lt] GPG ran into an issue: $stderr"; }
+                    else                { warn "[$lt] The password was sucessfully encrypted"; }
+                    
+                    # TODO what to do if $stdout is empty? (when gpg fails)
+                    # if stderror is empty and stdout is empty then ...
+                    $sth->execute($stdout, $profile );
+                }
+                if($dourlpasswordupdate eq "1")
+                {   ################################
+                    #Encrypt the phone home password
+                    ################################
+                    $string = "UPDATE profiles SET gpgphonehomepass=? WHERE profile=?";
+                    $sth = $dbh->prepare($string);
+                    my $urlpass_encoded = encode_base64($urlpass);
+                    
+                    my ($stdout, $stderr) = capture {
+                        system("printf \"$urlpass_encoded\" | gpg --symmetric --homedir /home/www-data/.gnupg --batch --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+                    };
+                    if($stderr ne "")   { warn "[$lt] GPG ran into an issue: $stderr"; }
+                    else                { warn "[$lt] The phone home password was sucessfully encrypted"; }
+                    
+                    # TODO what to do if $stdout is empty? (when gpg fails)
+                    # if stderror is empty and stdout is empty then ...
+                    $sth->execute($stdout, $profile);
+                }
+                
+                #now update everything else...
+                $string = "UPDATE profiles SET profile=?,username=?,domain=?,exts=?,ignore_exts=?,dirs=?,ignore_dirs=?,regex=?,path=?,phonehomeurl=?,phonehomeuser=?,delaytime=?,description=?,debug=?,concurrent=?,creditcards=?,zipfiles=?,memory=?,mask=?,hash=?,scantype=?,email_addr=? WHERE profile=?;";
+                $sth = $dbh->prepare($string);
+                $sth->execute($profile, $username, $domain, $extensions, $ext_choice, $directories, $dir_choice, $regex_db, $path, $url, $urluser, $delaytime, $description, $debug, $concurrent, $creditcards, $zipfiles, $memory, $mask, $smbhash, $scantype, $emails, $profile);
+
+                if(length($emails) != 0)
+                {
+                    $view_template->param(emails => $emails);
+                }
+				$view_template->param(username => filter($username));
+				$view_template->param(smbhash => filter($smbhash));
+				$view_template->param(domain => filter($domain));
+				$view_template->param(path => filter($path));
+				$view_template->param(memlim_value => $memory * 100 . '%' );
+				$view_template->param(mask_value => ($mask == 1 ? "Yes" : "No") );
+				$view_template->param(dir_choice => $dir_choice);
+				$view_template->param(directories => filter($directories));
+				$view_template->param(ext_choice => $ext_choice);
+				$view_template->param(extensions => filter($extensions));
+
+				my @regex_lookups = split(",", $regex_db );
+				my $length_regex_lookups = @regex_lookups;
+				my $regex_lookups_x = 0;
+				my $regex_list = "";
+				foreach( @regex_lookups )
+				{
+					$string = "SELECT name from regexes where number=?;";
+					$sth = $dbh->prepare($string);
+					$sth->execute($_);
+					my $results = $sth->fetchrow_arrayref();
+					if( $$results[0] ne "" )
+					{
+						$regex_list .= "$$results[0]";
+					}
+					else
+					{
+						$regex_list .= "<font face=red>Cannot find regex #" . $_ . "</font>";
+					}
+					if( $regex_lookups_x < ($length_regex_lookups - 1 ))
+					{
+						$regex_list .= ", ";
+					}
+					$regex_lookups_x++;
+				}
+				$view_template->param(regex_list => $regex_list);
+				$view_template->param(creditcards => filter($creditcards));
+				$view_template->param(zipfiles => filter($zipfiles));
+				$view_template->param(urluser => filter($urluser));
+				$view_template->param(delaytime => $delaytime);
+				$view_template->param(concurrent => $concurrent);
+				$view_template->param(description => filter($description));
+				$view_template->param(debug => $debug);
+			}
+			if( $scantype eq "win_agentless" || $scantype eq "win_share" )
+			{
+				#########################
+                # NEW: Josh - 2018.07.22
+                #########################
+                $view_template->param(winsmb_table => "1");
+                
+                if($dopasswordupdate eq "1")
+                {
+                    $string = "UPDATE profiles SET profile=?,username=?,password=?,domain=?,exts=?,ignore_exts=?,dirs=?,ignore_dirs=?,regex=?,debug=?,concurrent=?,creditcards=?,zipfiles=?,memory=?,mask=?,hash=?,scantype=?,email_addr=?,gpgpassword=? WHERE profile=?;";
+                    
+                    #encode password first... mostly because it's a pain to figure out how to feed it to GPG otherwise for all cases
+                    my $password_encoded = encode_base64($password);
+
+                    my ($stdout, $stderr) = capture {
+                        system("printf \"$password_encoded\" | gpg --symmetric --homedir /home/www-data/.gnupg --batch --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+                    };
+                    
+                    my $lt = localtime();
+                    if($stderr ne "")
+                    {
+                        warn "[$lt] GPG ran into an issue: $stderr";
+                    }
+                    else
+                    {
+                        warn "[$lt] The password was sucessfully encrypted";
+                    }
+                    
+                    # TODO what to do if $stdout is empty? (when gpg fails)
+                    # if stderror is empty and stdout is empty then ...
+
+                    $sth = $dbh->prepare($string);
+                    $sth->execute($profile, $username, ":)", $domain, $extensions, $ext_choice, $directories, $dir_choice, $regex_db, $debug, $concurrent, $creditcards, $zipfiles, $memory, $mask, $smbhash, $scantype, $emails, $stdout, $profile );
+				}
+				else
+				{
+                    $string = "UPDATE profiles SET profile=?,username=?,password=?,domain=?,exts=?,ignore_exts=?,dirs=?,ignore_dirs=?,regex=?,debug=?,concurrent=?,creditcards=?,zipfiles=?,memory=?,mask=?,hash=?,scantype=?,email_addr=? WHERE profile=?;";
+                    $sth = $dbh->prepare($string);
+                    $sth->execute($profile, $username, ":)", $domain, $extensions, $ext_choice, $directories, $dir_choice, $regex_db, $debug, $concurrent, $creditcards, $zipfiles, $memory, $mask, $smbhash, $scantype, $emails, $profile );
+				}
+
+				if(length($emails) != 0)
+                {
+                    $view_template->param(emails => $emails);
+                }
+                $view_template->param(username => filter($username));
+				$view_template->param(smbhash => filter($smbhash));
+				$view_template->param(domain => filter($domain));
+				$view_template->param(memlim_value => $memory * 100 . '%' );
+				$view_template->param(mask_value => ($mask == 1 ? "Yes" : "No") );
+				$view_template->param(dir_choice => $dir_choice);
+				$view_template->param(directories => filter($directories));
+				$view_template->param(ext_choice => $ext_choice);
+				$view_template->param(extensions => filter($extensions));
+
+				my @regex_lookups = split(",", $regex_db );
+				my $length_regex_lookups = @regex_lookups;
+				my $regex_lookups_x = 0;
+				my $regex_list = "";
+				foreach( @regex_lookups )
+				{
+					$string = "SELECT name from regexes where number=?;";
+					$sth = $dbh->prepare($string);
+					$sth->execute($_);
+					my $results = $sth->fetchrow_arrayref();
+					if( $$results[0] ne "" )
+					{
+						$regex_list .= "$$results[0]";
+					}
+					else
+					{
+						$regex_list .= "<font face=red>Cannot find regex #" . $_ . "</font>";
+					}
+					if( $regex_lookups_x < ($length_regex_lookups - 1 ))
+					{
+						$regex_list .= ", ";
+					}
+					$regex_lookups_x++;
+				}
+                $view_template->param(regex_list => $regex_list);
+                
+                $view_template->param(creditcards => filter($creditcards));
+                $view_template->param(zipfiles => filter($zipfiles));
+                $view_template->param(concurrent => $concurrent);
+                $view_template->param(debug => $debug);
+			}
+			if( $scantype eq "unix_agentless" )
+			{
+				#########################
+                # NEW: Josh - 2018.07.23
+                #########################
+                $view_template->param(unixagentless_table => "1");
+                
+                if($dopasswordupdate eq "1")
+                {
+                    $string = "UPDATE profiles SET profile=?,username=?,password=?,exts=?,ignore_exts=?,dirs=?,ignore_dirs=?,regex=?,debug=?,concurrent=?,creditcards=?,zipfiles=?,memory=?,mask=?,scantype=?,email_addr=?,gpgpassword=? WHERE profile=?;";
+
+                    #encode password first... mostly because it's a pain to figure out how to feed it to GPG otherwise for all cases
+                    my $password_encoded = encode_base64($password);
+
+                    my ($stdout, $stderr) = capture {
+                        system("printf \"$password_encoded\" | gpg --symmetric --homedir /home/www-data/.gnupg --batch --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+                    };
+                    
+                    my $lt = localtime();
+                    if($stderr ne "")
+                    {
+                        warn "[$lt] GPG ran into an issue: $stderr";
+                    }
+                    else
+                    {
+                        warn "[$lt] The password was sucessfully encrypted";
+                    }
+                    
+                    # TODO what to do if $stdout is empty? (when gpg fails)
+                    # if stderror is empty and stdout is empty then ...
+                    
+                    $sth = $dbh->prepare($string);
+                    $sth->execute($profile, $username, ":)", $extensions, $ext_choice, $directories, $dir_choice, $regex_db, $debug, $concurrent, $creditcards, $zipfiles, $memory, $mask, $scantype, $emails,$stdout, $profile );
+                }
+                else
+                {
+                    $string = "UPDATE profiles SET profile=?,username=?,password=?,exts=?,ignore_exts=?,dirs=?,ignore_dirs=?,regex=?,debug=?,concurrent=?,creditcards=?,zipfiles=?,memory=?,mask=?,scantype=?,email_addr=? WHERE profile=?;";
+
+                    $sth = $dbh->prepare($string);
+                    $sth->execute($profile, $username, ":)", $extensions, $ext_choice, $directories, $dir_choice, $regex_db, $debug, $concurrent, $creditcards, $zipfiles, $memory, $mask, $scantype, $emails, $profile );
+				}
+
+				if(length($emails) != 0)
+                {
+                    $view_template->param(emails => $emails);
+                }
+				
+				$view_template->param(username => filter($username));
+				$view_template->param(memlim_value => $memory * 100 . '%' );
+				$view_template->param(mask_value => ($mask == 1 ? "Yes" : "No") );
+				$view_template->param(dir_choice => $dir_choice);
+				$view_template->param(directories => filter($directories));
+				$view_template->param(ext_choice => $ext_choice);
+				$view_template->param(extensions => filter($extensions));
+
+				my @regex_lookups = split(",", $regex_db );
+				my $length_regex_lookups = @regex_lookups;
+				my $regex_lookups_x = 0;
+				my $regex_list = "";
+				foreach( @regex_lookups )
+				{
+					$string = "SELECT name from regexes where number=?;";
+					$sth = $dbh->prepare($string);
+					$sth->execute($_);
+					my $results = $sth->fetchrow_arrayref();
+					if( $$results[0] ne "" )
+					{
+						$regex_list .= "$$results[0]";
+					}
+					else
+					{
+						$regex_list .= "<font face=red>Cannot find regex #" . $_ . "</font>";
+					}
+					if( $regex_lookups_x < ($length_regex_lookups - 1 ))
+					{
+						$regex_list .= ", ";
+					}
+					$regex_lookups_x++;
+				}
+
+				$view_template->param(regex_list => $regex_list);
+				$view_template->param(creditcards => filter($creditcards));
+				$view_template->param(zipfiles => filter($zipfiles));
+				$view_template->param(concurrent => $concurrent);
+				$view_template->param(debug => $debug);
+			}
+			elsif( $scantype =~ /^(mssql_agentless|mysql_agentless)$/ )
+			{
+				#########################
+                # NEW: Josh - 2018.07.24
+                #########################
+                $view_template->param(database_table => "1");
+                
+                if($dopasswordupdate eq "1")
+                {
+                    $string = "UPDATE profiles SET profile=?,username=?,password=?,regex=?,debug=?,concurrent=?,creditcards=?,mask=?,scantype=?,ignore_dbs=?,dbs=?,ignore_tables=?,tables=?,ignore_columns=?,columns=?,rows=?,email_addr=?,gpgpassword=? WHERE profile=?;";
+                    
+                    #encode password first... mostly because it's a pain to figure out how to feed it to GPG otherwise for all cases
+                    my $password_encoded = encode_base64($password);
+
+                    my ($stdout, $stderr) = capture {
+                        system("printf \"$password_encoded\" | gpg --symmetric --homedir /home/www-data/.gnupg --batch --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+                    };
+                    
+                    my $lt = localtime();
+                    if($stderr ne "")
+                    {
+                        warn "[$lt] GPG ran into an issue: $stderr";
+                    }
+                    else
+                    {
+                        warn "[$lt] The password was sucessfully encrypted";
+                    }
+                    # TODO what to do if $stdout is empty? (when gpg fails)
+                    # if stderror is empty and stdout is empty then ...
+                    $sth = $dbh->prepare($string);
+                    $sth->execute($profile, $username, ":)", $regex_db, $debug, $concurrent, $creditcards, $mask, $scantype, $db_choice, $dbs, $table_choice, $tables, $column_choice, $columns, $rows, $emails, $stdout, $profile );
+                }
+                else
+                {
+                    $string = "UPDATE profiles SET profile=?,username=?,password=?,regex=?,debug=?,concurrent=?,creditcards=?,mask=?,scantype=?,ignore_dbs=?,dbs=?,ignore_tables=?,tables=?,ignore_columns=?,columns=?,rows=?,email_addr=? WHERE profile=?;";
+                    $sth = $dbh->prepare($string);
+                    $sth->execute($profile, $username, ":)", $regex_db, $debug, $concurrent, $creditcards, $mask, $scantype, $db_choice, $dbs, $table_choice, $tables, $column_choice, $columns, $rows, $emails, $profile );
+                }
+
+				if(length($emails) != 0)
+                {
+                    $view_template->param(emails => $emails);
+                }
+				
+				$view_template->param(username => filter($username));
+				$view_template->param(mask_value => ($mask == 1 ? "Yes" : "No") );
+                $view_template->param(db_choice => $db_choice);
+                $view_template->param(dbs => filter($dbs));
+                $view_template->param(table_choice => $table_choice);
+                $view_template->param(tables => filter($tables));
+                $view_template->param(column_choice => $column_choice);
+                $view_template->param(columns => filter($columns));
+                $view_template->param(rows => $rows);
+
+				my @regex_lookups = split(",", $regex_db );
+				my $length_regex_lookups = @regex_lookups;
+				my $regex_lookups_x = 0;
+				my $regex_list = "";
+				foreach( @regex_lookups )
+				{
+					$string = "SELECT name from regexes where number=?;";
+					$sth = $dbh->prepare($string);
+					$sth->execute($_);
+					my $results = $sth->fetchrow_arrayref();
+					if( $$results[0] ne "" )
+					{
+						$regex_list .= "$$results[0]";
+					}
+					else
+					{
+						$regex_list .= "<font face=red>Cannot find regex #" . $_ . "</font>";
+					}
+					if( $regex_lookups_x < ($length_regex_lookups - 1 ))
+					{
+						$regex_list .= ", ";
+					}
+					$regex_lookups_x++;
+				}
+				$view_template->param(regex_list => $regex_list);
+				
+				$view_template->param(creditcards => filter($creditcards));
+				$view_template->param(concurrent => $concurrent);
+				$view_template->param(debug => $debug);
+			}
+		}
+		else
+		{
+			#print "Could not find profile to update.\n\n";
+			push @error_list, {error => "Could not find profile to update."};
+		}
+		$sth->finish;
+		$dbh->disconnect;
+	}
+}
+
+if (scalar(@error_list) > 0)
+{
+    $view_template->param(error_list => \@error_list);
+}
+
+print "Content-type: text/html\n\n", $view_template->output;
+
+
+sub filter
+{
+	my $thing = shift;
+	$thing =~ s/\&/\&amp;/g;
+	$thing =~ s/\#/&#35;/g;
+	$thing =~ s/"/&#34;/g;
+	$thing =~ s/\%/&#37;/g;
+	$thing =~ s/\'/&#39;/g;
+	$thing =~ s/\//&#47;/g;
+	$thing =~ s/</&#60;/g;
+	$thing =~ s/>/&#62;/g;
+	$thing =~ s/\[/&#91;/g;
+	$thing =~ s/\\/&#92;/g;
+	$thing =~ s/\]/&#93;/g;
+	$thing =~ s/`/&#96;/g;
+	$thing =~ s/{/&#123;/g;
+	$thing =~ s/\|/&#124;/g;
+	$thing =~ s/}/&#125;/g;
+	return $thing;
+}
+
+sub get_version
+{
+	open( V, "<../etc/version" );
+	my $v = <V>;
+	close( V );
+	chomp $v;
+	return $v;
+}
+

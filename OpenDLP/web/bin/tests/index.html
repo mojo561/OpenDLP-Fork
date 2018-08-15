@@ -1,0 +1,51 @@
+#!/usr/bin/perl
+
+#use Proc::Queue;
+use Parallel::ForkManager;
+use Data::Dumper;
+#use IPC::Shareable;
+#use POSIX ":sys_wait_h";
+use CGI qw/:standard/;
+use HTML::Template;
+
+my $view_template = HTML::Template->new(filename => "index_view.tmpl");
+$view_template->param(mainpageheading => "Worky?");
+$view_template->param(opendlpversion => "12345");
+
+#my $handle = tie @data, 'IPC::Shareable', undef, { destroy => 1 };
+my @data = ();
+
+#$handle->shlock();
+#push @data, {bar => "foo"};
+#$handle->shunlock();
+my @testy = ();
+push @testy, {baz => "bar"};
+
+#Proc::Queue::size(1);
+my $pm = Parallel::ForkManager->new(5);
+for (my $i=0; $i < 1; $i++)
+{
+        $pm->start; #bad example, need 'and next'!
+                #$handle->shlock();
+                if( $$ % 2 == 0)
+                {
+                        push(@data, {bar => "child! $$"});
+                }
+                else
+                {
+                        push(@data, {bar => "(wild) child! $$"});
+                }
+                #$handle->shunlock();
+                push @testy, {baz => "foo"};
+                #sleep 5;
+                #exit(0);
+        $pm->finish;
+        
+}
+$pm->wait_all_children;
+
+$view_template->param(bizbaz => \@testy);
+$view_template->param(foobar => \@data);
+print "Content-type: text/html\n\n", $view_template->output;
+
+#IPC::Shareable->clean_up_all;

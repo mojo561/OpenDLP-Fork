@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+      <meta name="description" content="OpenDLP <!-- TMPL_VAR NAME=opendlpversion -->">
+      <meta name="author" content="JNR">
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+      <script src="scripts/startscan.js"></script>
+   </head>
+   <body>
+<!--    NAV     -->
+<TMPL_INCLUDE NAME="./test_includeme.tmpl">
+<!--    //NAV   -->
+
+      <main role="main" class="mr-5 ml-md-5 mb-5 pt-5 mt-3">
+
+<TMPL_IF NAME=errorlist>
+<TMPL_LOOP NAME=errorlist>
+<TMPL_VAR NAME=erroritem><br>
+</TMPL_LOOP>
+<TMPL_ELSE>
+					<h2><TMPL_VAR NAME=mainpageheading></h2><br><br>
+<TMPL_IF NAME=metasploittable>
+					<!-- TODO: finish... -->
+					<table class=sample>
+						<tr>
+							<td>Do not close or leave this window until all scanners are deployed!</td>
+						</tr>
+					</table><br>
+					<table class=sample>
+						<tr>
+							<td>General scan information</td>
+						</tr>
+						<tr>
+							<td>
+								Scan name: <TMPL_VAR NAME=scanname><br>
+								Profile: <TMPL_VAR NAME=profile><br>
+								Scan type: <TMPL_VAR NAME=scantype><br>
+								Sessions: <TMPL_VAR NAME=systems><br>
+								Concurrent: <TMPL_VAR NAME=concurrent><br>
+							</td>
+						</tr>
+					</table>
+</TMPL_IF>
+<TMPL_IF NAME=winagenttable>
+                    <div class="w-50">
+					<div class="card">
+						<div class="card-body">
+							Do not close or leave this window until all scanners are deployed!
+						</div>
+					</div>
+					</div>
+					<div class="w-25">
+					<br><br>
+					<table class="table table-bordered table-sm">
+					<thead>
+						<tr>
+							<th>General scan information</th>
+						</tr>
+                    </thead>
+                    <tbody>
+						<tr>
+							<td>
+								Scan name: <TMPL_VAR NAME=scanname><br>
+								Profile: <TMPL_VAR NAME=profile><br>
+								Systems: <TMPL_VAR NAME=systems><br>
+								Concurrent: <TMPL_VAR NAME=concurrent><br>
+							</td>
+						</tr>
+                    </tbody>
+					</table>
+					</div>
+					<br><br>
+
+					<div class="w-75">
+					<TMPL_IF NAME=winagentloglist>
+					<div class="alert alert-info" role="alert">
+					<TMPL_LOOP NAME=winagentloglist>
+						<TMPL_VAR NAME=winagentlogitem><br>
+					</TMPL_LOOP>
+					</div>
+					</TMPL_IF>
+
+					<TMPL_IF NAME=winagenterrorlist>
+					<div class="alert alert-warning" role="alert">
+					<TMPL_LOOP NAME=winagenterrorlist>
+						<TMPL_VAR NAME=winagenterroritem><br>
+					</TMPL_LOOP>
+					</div>
+					</TMPL_IF>
+					</div>
+</TMPL_IF>
+
+
+
+</TMPL_IF>
+
+      </main>
+
+   <!-- Bootstrap core JavaScript
+   ================================================== -->
+   <!-- Placed at the end of the document so the pages load faster -->
+   <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+   <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery-slim.min.js"><\/script>')</script>
+   <script src="scripts/popper.min.js"></script>
+   <script src="scripts/bootstrap.min.js"></script>
+	</body>
+</html>

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+      <meta name="description" content="OpenDLP <!-- TMPL_VAR NAME=opendlpversion -->">
+      <meta name="author" content="JNR">
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+   </head>
+   <body>
+<!--    NAV     -->
+<TMPL_INCLUDE NAME="./test_includeme.tmpl">
+<!--    //NAV   -->
+
+      <main role="main" class="mr-5 ml-md-5 mb-5 pt-5 mt-3">
+<TMPL_IF NAME=errorlist>
+<TMPL_LOOP NAME=errorlist>
+   <TMPL_VAR NAME=erroritem><br>
+</TMPL_LOOP>
+<TMPL_ELSE>
+<h2>View False Positives</h2><br>
+</TMPL_IF>
+
+<TMPL_IF NAME=useforma>
+<!-- // Form A -->
+On this screen, you can:<br>
+<ul>
+<li>Select a scan to view the false positives associated with its systems</li>
+<li>After selecting a scan, reverse false positives so they display in results
+</ul>
+<div class="w-25">
+<form method=GET action=false.html>
+<table class="table table-bordered table-hover table-sm">
+<thead>
+<tr>
+<th>Details</th>
+<th width=75>Scan name</th>
+<th>False Positives</th>
+</tr>
+</thead>
+<tbody>
+<TMPL_LOOP NAME=fplist>
+<tr>
+<td><input type=radio name=scanname value="<TMPL_VAR NAME=scan>"></td>
+<td><TMPL_VAR NAME=scan></td>
+<td align=right><TMPL_VAR NAME=scancount></td>
+</tr>
+</TMPL_LOOP>
+</tbody>
+</table>
+<button type="submit" class="btn btn btn-primary btn-md">View False Positives</button>
+</form>
+</div>
+<!-- Form A // -->
+</TMPL_IF>
+
+<TMPL_IF NAME=useformb>
+<!-- // Form B -->
+<h5>Select a system in scan "<TMPL_VAR NAME=scanname>" to view its detailed false positives:</h5>
+<div class="w-50">
+<form method=GET action=false.html>
+<input type=hidden name=scanname value="<TMPL_VAR NAME=scanname>">
+<table class="table table-bordered table-hover table-sm">
+<thead>
+<tr>
+<td>&nbsp;</td>
+<th>Network name</th>
+<th>IP address</th>
+<th>False Positives</th>
+</tr>
+</thead>
+<tbody>
+<TMPL_LOOP NAME=systemlist>
+<tr>
+<td><input type=radio name=system value="<TMPL_VAR NAME=tracking>"></td>
+<td><TMPL_VAR NAME=printme_system></td>
+<td><TMPL_VAR NAME=printme_ip></td>
+<td align=right><TMPL_VAR NAME=fpcount></td>
+</tr>
+</TMPL_LOOP>
+</tbody>
+</table>
+<button type="submit" class="btn btn btn-primary btn-md">View False Positives</button>
+</form>
+</div>
+<!-- Form B // -->
+</TMPL_IF>
+
+<TMPL_IF NAME=useformc>
+<!-- // Form C -->
+<h5><TMPL_VAR NAME=formcheading></h5>
+<div class="w-75">
+<form method=post action=false-verify.html>
+<input type=hidden name=scanname value="<TMPL_VAR NAME=scanname>">
+<input type=hidden name=tracker value="<TMPL_VAR NAME=tmpl_system>">
+<table class="table table-bordered table-hover table-sm">
+<thead>
+<tr>
+<th>#</th>
+<th>Regex</th>
+<th>Pattern</th>
+<th>File</th>
+<th>Byte offset</th>
+<th>False?</th>
+</tr>
+</thead>
+<tbody>
+<TMPL_LOOP NAME=fplist>
+<tr>
+<td><TMPL_VAR NAME=row_counter></td>
+<td><TMPL_VAR NAME=type></td>
+<td><TMPL_VAR NAME=pattern_copy></td>
+<td><TMPL_VAR NAME=file_printme></td>
+<td><TMPL_VAR NAME=offset></td>
+<td><input type=checkbox name=f<TMPL_VAR NAME=number> value=1></td>
+</tr>
+</TMPL_LOOP>
+</tbody>
+</table>
+<button type="submit" class="btn btn btn-primary btn-md">Mark Selected as NOT False Positives</button>
+</form>
+</div>
+<!-- Form C // -->
+</TMPL_IF>
+
+<TMPL_IF NAME=useformd>
+<!-- // Form D -->
+<h5><TMPL_VAR NAME=formdheading></h5>
+<form method=post action=false-verify.html>
+<input type=hidden name=scanname value="<TMPL_VAR NAME=scanname>">
+<input type=hidden name=tracker value="<TMPL_VAR NAME=tmpl_system>">
+<table class="table table-bordered table-hover table-sm">
+<thead>
+<tr>
+<th>#</th>
+<th>Regex</th>
+<th>Pattern</th>
+<th>Database</th>
+<th>Table</th>
+<th>Column</th>
+<th>Row</th>
+<th>False?</th>
+</tr>
+</thead>
+<tbody>
+<TMPL_LOOP NAME=fplist>
+<tr>
+<td><TMPL_VAR NAME=row_counter></td>
+<td><TMPL_VAR NAME=type></td>
+<td><TMPL_VAR NAME=pattern_copy></td>
+<td><TMPL_VAR NAME=db_printme></td>
+<td><TMPL_VAR NAME=tbl_printme></td>
+<td><TMPL_VAR NAME=col_printme></td>
+<td><TMPL_VAR NAME=row></td>
+<td><input type=checkbox name=f<TMPL_VAR NAME=number> value=1></td>
+</tr>
+</TMPL_LOOP>
+</tbody>
+</table>
+<button type="submit" class="btn btn btn-primary btn-md">Mark Selected as NOT False Positives</button>
+</form>
+<!-- Form D // -->
+</TMPL_IF>
+
+      </main>
+      <!-- Bootstrap core JavaScript
+      ================================================== -->
+      <!-- Placed at the end of the document so the pages load faster -->
+      <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+      <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery-slim.min.js"><\/script>')</script>
+      <script src="scripts/popper.min.js"></script>
+      <script src="scripts/bootstrap.min.js"></script>
+   </body>
+</html>

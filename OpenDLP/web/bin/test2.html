@@ -1,0 +1,46 @@
+#!/usr/bin/perl
+
+use CGI qw/:standard -no_xhtml/;
+#use DBI;
+use MIME::Base64;
+use HTML::Template;
+
+#my $db_admin_file = "../etc/db_admin";
+#open( DB, $db_admin_file );
+#my $db_line = <DB>;
+#close( DB );
+#chomp $db_line;
+#($db_username, $db_password) = split( ":", $db_line );
+
+my $query = CGI->new;
+$file = $query->param('file');
+$ip = $query->param('ip');
+$profile = $query->param('profile');
+$sessionid = $query->param('sessionid');
+
+if( $profile ne "" && $ip ne "" && $file ne "" )
+{
+    my $page_template = HTML::Template->new(filename => 'test2_view.tmpl');
+    
+    my $decodedfile = decode_base64( $file );
+	my $decodedip = decode_base64( $ip );
+	my $decodedprofile = decode_base64( $profile );
+	my $hiddenfields = hidden(-name=>'ip', -value=>$ip);
+    $hiddenfields .= hidden(-name=>'file', -value=>$file);
+    $hiddenfields .= hidden(-name=>'profile', -value=>$profile);
+    $hiddenfields .= hidden(-name=>'sessionid', -value=>$sessionid);
+    
+    $page_template->param(body_downloadfilename => $decodedfile);
+    $page_template->param(body_downloadhost => $decodedip);
+    $page_template->param(form_hiddenfields => $hiddenfields);
+    
+    print "Content-type: text/html\n\n", $page_template->output;
+}
+else
+{
+    # TODO
+    my $error_template = HTML::Template->new(filename => 'test2_error.tmpl');
+    $error_template->param(error_title => "Error todo page");
+    $error_template->param(error_body => "<h2>TODO</h2>");
+    print "Content-type: text/html\n\n", $error_template->output;
+}

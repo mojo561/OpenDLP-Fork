@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+      <meta name="description" content="OpenDLP <!-- TMPL_VAR NAME=opendlpversion -->">
+      <meta name="author" content="JNR">
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+      <script src=scripts/actions.js></script>
+   </head>
+   <body>
+<!--    NAV     -->
+<TMPL_INCLUDE NAME="./test_includeme.tmpl">
+<!--    //NAV   -->
+
+
+               <main role="main" class="mr-5 ml-md-5 mb-5 pt-5 mt-3">
+               <h2>View Results</h2><br>
+               <!-- TMPL_VAR NAME=instructions --><br><br>
+               <form method=GET action=viewresults.html>
+                  <input type=hidden name=scanname value="<!-- TMPL_VAR NAME=scanname -->">
+<TMPL_IF NAME="tableA">                  <!-- Table A -->
+                  <div class="w-100">
+                  <table class="table table-bordered table-dark table-sm">
+                  <thead>
+                     <tr>
+                        <th>&nbsp;</th>
+                        <th>Network name</th>
+                        <th>IP address</th>
+                        <th>Status</th>
+                        <th>Step</th>
+                        <th>Files done</th>
+                        <th>Total files</th>
+                        <th>Bytes done</th>
+                        <th>Total bytes</th>
+                        <th>Updated</th>
+                        <th>Findings</th>
+                        <th>Pause</th>
+                        <th>Resume</th>
+                        <th>Uninstall</th>
+                     </tr>
+                  </thead>
+                  <tbody>
+<TMPL_LOOP NAME=output_list>
+                     <tr class="table-light text-dark">
+                        <td rowspan=2><input type="radio" name="system" value="<!-- TMPL_VAR NAME=tracking -->"></td>
+                        <td><!-- TMPL_VAR NAME=tracking_system --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_ip --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_control --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_status --></td>
+                        <td align=right><!-- TMPL_VAR NAME=tracking_filesdone --></td>
+                        <td align=right><!-- TMPL_VAR NAME=tracking_filestotal --></td>
+                        <td align=right><!-- TMPL_VAR NAME=tracking_bytesdone --></td>
+                        <td align=right><!-- TMPL_VAR NAME=tracking_bytestotal --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_time --></td>
+                        <td align=right><!-- TMPL_VAR NAME=tracking_count --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_running --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_stopped --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_uninstalled --></td>
+                     </tr>
+                     <tr class="table-light text-dark">
+                        <td colspan=4>&nbsp;</td>
+                        <td colspan=4>
+<TMPL_IF NAME="tracking_stateok">
+                              <div class="container">
+                              <div class="row align-items-start">
+                              <div class="col-sm-8">
+                              <img src="images/red.gif" width="<!-- TMPL_VAR NAME=tracking_progress -->" height="10">
+                              </div>
+                              <div class="col-sm-4">
+                              <!-- TMPL_VAR NAME=tracking_roundedprogress -->
+                              </div>
+                              </div>
+                              </div>
+<TMPL_ELSE>
+                        &nbsp;
+</TMPL_IF>
+                        </td>
+                        <td colspan=5>
+                        &nbsp;
+                        </td>
+                     </tr>
+</TMPL_LOOP>
+                     <tr class="table-light">
+<!--                         <td colspan=14><input type=submit value="View Results"></td> -->
+                        <td colspan="14"><button type="submit" class="btn btn btn-primary btn-md">View Results</button></td>
+                     </tr>
+                  </tbody>
+                  </table>
+                  </div>
+                  <!-- Table A // --></TMPL_IF>
+<TMPL_IF NAME="tableB">                  <!-- Table B -->
+                  <div class="w-100">
+                  <table class="table table-bordered table-dark table-sm">
+                  <thead>
+                     <tr>
+                        <th>&nbsp;</th>
+                        <th>IP address</th>
+                        <th>Status</th>
+                        <th>Step</th>
+                        <th>Databases done</th>
+                        <th>Total Databases</th>
+                        <th>Tables done</th>
+                        <th>Total Tables</th>
+                        <th>Columns done</th>
+                        <th>Total Columns</th>
+                        <th>Updated</th>
+                        <th>Findings</th>
+                        <th>Pause</th>
+                        <th>Resume</th>
+                        <th>Uninstall</th>
+                     </tr>
+                  </thead>
+                  <tbody>
+<TMPL_LOOP NAME=output_list>
+                     <tr class="table-light text-dark">
+                        <td rowspan=2><input type="radio" name="system" value="<!-- TMPL_VAR NAME=tracking -->"></td>
+                        <td><!-- TMPL_VAR NAME=tracking_ip --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_control --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_status --></td>
+                        <td align=right><!-- TMPL_VAR NAME=tracking_dbdone --></td>
+                        <td align=right><!-- TMPL_VAR NAME=tracking_dbtotal --></td>
+                        <td align=right><!-- TMPL_VAR NAME=tracking_tabledone --></td>
+                        <td align=right><!-- TMPL_VAR NAME=tracking_tabletotal --></td>
+                        <td align=right><!-- TMPL_VAR NAME=tracking_coldone --></td>
+                        <td align=right><!-- TMPL_VAR NAME=tracking_coltotal --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_time --></td>
+                        <td align=right><!-- TMPL_VAR NAME=tracking_count --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_running --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_stopped --></td>
+                        <td><!-- TMPL_VAR NAME=tracking_uninstalled --></td>
+                     </tr>
+                     <tr class="table-light text-dark">
+                        <td colspan=4>&nbsp;</td>
+                        <td colspan=4>
+<TMPL_IF NAME="tracking_stateok">
+                              <div class="container">
+                              <div class="row align-items-start">
+                              <div class="col-sm-8">
+                              <img src="images/red.gif" width="<!-- TMPL_VAR NAME=tracking_progress -->" height="10">
+                              </div>
+                              <div class="col-sm-4">
+                              <!-- TMPL_VAR NAME=tracking_roundedprogress -->
+                              </div>
+                              </div>
+                              </div>
+<TMPL_ELSE>
+                        &nbsp;
+</TMPL_IF>
+                        </td>
+                        <td colspan=6>
+                        &nbsp;
+                        </td>
+                     </tr>
+</TMPL_LOOP>
+                     <tr class="table-light">
+<!--                         <td colspan=15><input type=submit value="View Results"></td> -->
+                        <td colspan="15"><button type="submit" class="btn btn btn-primary btn-md">View Results</button></td>
+                     </tr>
+                  </tbody>
+                  </table>
+                  </div>
+                  <!-- Table B // --></TMPL_IF>
+               </form>
+               </main>
+
+
+   <!-- Bootstrap core JavaScript
+   ================================================== -->
+   <!-- Placed at the end of the document so the pages load faster -->
+   <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+   <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery-slim.min.js"><\/script>')</script>
+   <script src="scripts/popper.min.js"></script>
+   <script src="scripts/bootstrap.min.js"></script>
+   </body>
+</html>

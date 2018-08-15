@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+      <meta name="description" content="OpenDLP <!-- TMPL_VAR NAME=opendlpversion -->">
+      <meta name="author" content="JNR">
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+      <script src=scripts/deletescan.js></script>
+   </head>
+   <body onLoad="document.getElementById('toggleDisplay').checked=false">
+<!--    NAV     -->
+<TMPL_INCLUDE NAME="./test_includeme.tmpl">
+<!--    //NAV   -->
+      <main role="main" class="mr-5 ml-md-5 mb-4 pt-5 mt-3">
+<TMPL_IF NAME=errorlist>
+<TMPL_LOOP NAME=errorlist>
+   <TMPL_VAR NAME=erroritem><br>
+</TMPL_LOOP>
+<TMPL_ELSE>
+<h2>Delete Scans</h2>
+By default, only scans whose agents have all finished or have been manually stopped and uninstalled are shown below, and scans currently running will not be displayed.<br>
+<input type=checkbox onchange='toggleRows(this.checked);' id="toggleDisplay" name="toggleDisplay" checked="false"> Display incomplete scans
+<div class="w-50">
+<form method=POST action=deletescan-verify.html>
+<table id="table1" class="table table-bordered table-hover table-sm">
+<thead>
+<tr>
+<th>Delete</th>
+<th>Scan name</th>
+<th>Scan type</th>
+<th>Finished</th>
+<th>Uninstalled</th>
+<th>Total</th>
+</tr>
+</thead>
+<tbody>
+<TMPL_LOOP NAME=scanlist>
+<tr id="<TMPL_VAR NAME=tr_id>" style="<TMPL_VAR NAME=tr_style>">
+<td><input type="checkbox" name="scanname" value="<TMPL_VAR NAME=scankey>"></td>
+<td><TMPL_VAR NAME=scankey></td>
+<td><TMPL_VAR NAME=scantype></td>
+<td><TMPL_VAR NAME=finished></td>
+<td><TMPL_VAR NAME=uninstalled></td>
+<td><TMPL_VAR NAME=total></td>
+</tr>
+</TMPL_LOOP>
+</tbody>
+</table>
+<button type="submit" class="btn btn btn-primary btn-md">Delete Scans</button>
+</form>
+</div>
+</TMPL_IF>
+      </main>
+      <!-- Bootstrap core JavaScript
+      ================================================== -->
+      <!-- Placed at the end of the document so the pages load faster -->
+      <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+      <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery-slim.min.js"><\/script>')</script>
+      <script src="scripts/popper.min.js"></script>
+      <script src="scripts/bootstrap.min.js"></script>
+   </body>
+</html>

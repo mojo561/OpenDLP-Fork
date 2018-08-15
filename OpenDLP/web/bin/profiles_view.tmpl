@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+      <meta name="description" content="OpenDLP <!-- TMPL_VAR NAME=opendlpversion -->">
+      <meta name="author" content="JNR">
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+      <script src=scripts/profiles.js></script>
+      <script src=scripts/actions.js></script>
+</head>
+<body onLoad="changeList(document.profile.scantype,<!-- TMPL_VAR NAME=oldprofile_found -->)">
+<!--    NAV     -->
+<TMPL_INCLUDE NAME="./test_includeme.tmpl">
+<!--    //NAV   -->
+
+               <main role="main" class="mr-5 ml-md-1 pt-5 mt-3 mb-5 d-flex justify-content-center">
+               <div class="container">
+               <h2><!-- TMPL_VAR NAME=mainpage_headertext --></h2>
+
+
+<form method=post action=profiles-new.html name=profile onsubmit="return validate_form(this);">
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td width=200>
+Profile Name <a href=help.html#profile onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a>
+</td>
+<td width=500>
+<input type="text" name="profilename" size="30" value="<!-- TMPL_VAR NAME=old_profilename -->">
+</td>
+</tr>
+<tr>
+<td>
+Scan Type <a href=help.html#scantype onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a>
+</td>
+<td>
+<select name=scantype onchange="changeList(this,<!-- TMPL_VAR NAME=oldprofile_found -->)">
+<option>&nbsp;</option>
+<TMPL_LOOP NAME=scantype_list>
+<option <!-- TMPL_VAR NAME=scantype_optionfulltext --> <!-- TMPL_VAR NAME=scantype_optionselectedtext -->><!-- TMPL_VAR NAME=scantype_optiondisplaytext --></option>
+</TMPL_LOOP>
+</select>
+</td>
+</tr>
+<tr>
+<td>
+Mask Sensitive Data? <a href=help.html#mask onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a>
+</td>
+<td><input name=mask type=checkbox value=1 <!-- TMPL_VAR NAME=old_maskcheckedtext -->></td>
+</tr>
+<tr>
+<td>Email notifications</td>
+<td>
+<input name=email_check type=checkbox id=email_checkbox value=email_checkbox onchange="changeList(this,<!-- TMPL_VAR NAME=oldprofile_found -->)" <!-- TMPL_VAR NAME=old_emailcheckedtext -->>
+<div id=email_area style="display:<!-- TMPL_VAR NAME=email_styledisplayvalue -->">
+Enter email addresses here (seperated by commas):<br>
+<textarea rows=4 cols=50 name=email_value><!-- TMPL_VAR NAME=old_emailaddresstext --></textarea>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+
+<div id=os_credentials>
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td width=200>Username <a href=help.html#username onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a>
+</td>
+<td width=500><input type="text" name="username" size="30" value="<!-- TMPL_VAR NAME=old_usernamevalue -->"></td>
+</tr>
+<tr>
+<td>Password <a href=help.html#password onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a>
+</td>
+<td>
+<input name=password type=password size=30>
+<TMPL_IF NAME=includepasswordupdatecheckbox>
+<input type="checkbox" name="pwtoggle_checkbox" value="1" onchange="togglePasswordInput()" checked>Update existing password?
+</TMPL_IF>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+
+<div id=domain>
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td width=200>
+Windows Domain/Workgroup <a href=help.html#domain onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br>
+<small>
+(For Windows OS scans (except Windows Share scans): Required.<br>
+For MSSQL DB scans:<br>
+&bull; Specify if you are using OS account<br>
+&bull; Leave blank if using DB account<br>
+</small>
+</td>
+<td width=500><input type="text" name="domain" size="30" value="<!-- TMPL_VAR NAME=old_domainvalue -->"></td>
+</tr>
+</tbody>
+</table>
+</div>
+
+
+<div id=db_options>
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td width=200>
+Databases <a href=help.html#databases onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the database names in this list)</small>
+</td>
+<td width=500>
+<input type=radio name=db_choice value=everything onclick="document.profile.databases.disabled=true" <!-- TMPL_VAR NAME=old_scanalldbchecked -->>Scan all databases<br>
+<input type=radio name=db_choice value=ignore onclick="document.profile.databases.disabled=false" <!-- TMPL_VAR NAME=old_scanalldbexceptionschecked -->>Scan all databases except these<br>
+<input type=radio name=db_choice value=allow onclick="document.profile.databases.disabled=false" <!-- TMPL_VAR NAME=old_scanalldbinclusivechecked -->>Only scan the following databases<br>
+<textarea name=databases rows=10 cols=60><TMPL_IF NAME=database_list><!-- TMPL_VAR NAME=database_list --></TMPL_IF></textarea>
+</td>
+</tr>
+<tr>
+<td width=200>
+Tables <a href=help.html#tables onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the table names in this list)</small>
+</td>
+<td width=500>
+<input type=radio name=table_choice value=everything onclick="document.profile.tables.disabled=true" <!-- TMPL_VAR NAME=old_scanalltableschecked -->>Scan all tables<br>
+<input type=radio name=table_choice value=ignore onclick="document.profile.tables.disabled=false" <!-- TMPL_VAR NAME=old_scanalltablesexceptionschecked -->>Scan all tables except these<br>
+<input type=radio name=table_choice value=allow onclick="document.profile.tables.disabled=false" <!-- TMPL_VAR NAME=old_scanalltablesinclusivechecked -->>Only scan the following tables<br>
+<textarea name=tables rows=10 cols=60><TMPL_IF NAME=dbtable_list><!-- TMPL_VAR NAME=dbtable_list --></TMPL_IF></textarea>
+</td>
+</tr>
+<tr>
+<td width=200>
+Columns <a href=help.html#columns onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the column names in this list)</small>
+</td>
+<td width=500>
+<input type=radio name=column_choice value=everything onclick="document.profile.columns.disabled=true" <!-- TMPL_VAR NAME=old_scanallcolschecked -->>Scan all columns<br>
+<input type=radio name=column_choice value=ignore onclick="document.profile.columns.disabled=false" <!-- TMPL_VAR NAME=old_scanallcolsexceptionschecked -->>Scan all columns except these<br>
+<input type=radio name=column_choice value=allow onclick="document.profile.columns.disabled=false" <!-- TMPL_VAR NAME=old_scanallcolsinclusivechecked -->>Only scan the following columns<br>
+<!-- TODO
+this should be ok... -->
+<textarea name=columns rows=10 cols=60 <!-- TMPL_VAR NAME=dbcol_disablevaluetext -->><TMPL_IF NAME=dbcol_list><!-- TMPL_VAR NAME=dbcol_list --></TMPL_IF></textarea>
+</td>
+</tr>
+<tr>
+<td>
+Limit columns to X rows <a href=help.html#rows onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Use "0" to get all rows)</small>
+</td>
+<td><input type="text" name="rows" width="30" value="<!-- TMPL_VAR NAME=scanrowsvalue -->"></td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- end of MSSQL div //-->
+
+<div id=meta_agent_options>
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td width=200>
+Metasploit Host <a href=help.html#metahost onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>IP of running Metasploit console.</small>
+</td>
+<td width=500>
+<input type="text" name="metahost" size="30" value="<!-- TMPL_VAR NAME=old_metahostvalue -->">&nbsp;&nbsp;&nbsp; <input name=metassl type=checkbox value=1 <!--TMPL_VAR NAME=old_metausesslchecked -->>Use SSL?
+</td>
+</tr>
+<tr>
+<td width=200>
+Metasploit Port <a href=help.html#metaport onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>Port of running Metasploit console.</small>
+</td>
+<td width=500><input type="text" name=metaport size=30 value="<!-- TMPL_VAR NAME=metaportvalue -->"></td>
+</tr>
+<tr>
+<td width=200>
+Metasploit User <a href=help.html#metauser onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>xmlrpc username.</small>
+</td>
+<td width=500><input type="text" name=metauser size=30 value="<!-- TMPL_VAR NAME=metauservalue -->"></td>
+</tr>
+<tr>
+<td width=200>
+Metasploit Password <a href=help.html#metapass onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>xmlrpc password.</small>
+</td>
+<!-- TODO
+I'm assuming that metapass is the same as every other pass (ie: it will be encrypted sooner or later).
+Keep this blank for now when modifying existing profiles.
+-->
+<td width=500><input name=metapass size=30 type=password></td>
+</tr>
+<tr>
+<td width=200>
+Path to OpenDLP files <a href=help.html#metapath onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>Location on Metasploit system</small>
+</td>
+<td width=500><input type="text" name=metapath size=40 value="<!-- TMPL_VAR NAME=metapath -->"></td>
+</tr>
+<tr>
+<td width=200>
+Metasploit Latency (ms) <a href=help.html#metalatency onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>Leave alone unless CPU usage high</small>
+</td>
+<td width=500><input type="text" name=metalatency size=30 value="<!-- TMPL_VAR NAME=metalatency -->"></td>
+</tr>
+<tr>
+<td width=200>
+Metasploit Timeout (s) <a href=help.html#metatimeout onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>Time to wait for response before giving up</small>
+</td>
+<td width=500><input type="text" name=metatimeout size=30 value="<!-- TMPL_VAR NAME=metatimeoutvalue -->"></td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- end of meta_agent_options //-->
+
+<div id=smbhash>
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td width=200>
+SMBHash <a href=help.html#smbhash onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a></td>
+<td width=500><input type="text" name=smbhash size=65 value="<!--TMPL_VAR NAME=old_smbhashvalue -->"></td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- end of SMBhash div //-->
+
+
+<div id=win_agent_options>
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td width=200>
+Installation Path <a href=help.html#install_path onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Must be new directory. Be aware temporary files may be readable by other users.)</small>
+</td>
+<td width=500>
+<!-- TODO
+create table of values for 'good' paths (include dos names?)... values so far:
+C:\Program Files\OpenDLP
+C:\Program Files (x86)\OpenDLP
+-->
+<select name="path">
+<TMPL_LOOP NAME=agentpaths_list>
+<option value="<!-- TMPL_VAR NAME=agentpath -->" <!--TMPL_VAR NAME=agentpath_selectedvaluetext -->><!-- TMPL_VAR NAME=agentpath --></option>
+</TMPL_LOOP>
+</select>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- end of win_agent_options //-->
+
+
+<div id=memory>
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td width=200>
+Memory Limit <a href=help.html#memory onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(as percent of target system's total RAM)</small>
+</td>
+<td width=500>
+<!-- TODO:
+val	text
+.01	1%
+.02	2%
+.05	5%
+.1	10% (default selected)
+.15	15%
+.2	20%
+.25	25%
+-->
+<select name=memory><TMPL_LOOP NAME=memlim_list>
+<option value="<!-- TMPL_VAR NAME=memlimoptionval -->" <!-- TMPL_VAR NAME=memlim_selectedvaluetext -->><!-- TMPL_VAR NAME=memlimoptiontext --></option></TMPL_LOOP>
+</select>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- end of memory div //-->
+
+
+<div id=win_agent_options_3>
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td width=200>
+Directories <a href=help.html#directories onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the file extensions in this list)</small>
+</td>
+<td width=500>
+<input type=radio name=dir_choice value=everything onclick="document.profile.directories.disabled=true" <!-- TMPL_VAR NAME=old_scanwinagentalldirschecked -->>Scan all directories<br>
+<input type=radio name=dir_choice value=ignore onclick="document.profile.directories.disabled=false" <!-- TMPL_VAR NAME=old_scanwinagentexceptionsdirschecked -->>Scan all directories except these (recursive)<br>
+<input type=radio name=dir_choice value=allow onclick="document.profile.directories.disabled=false" <!-- TMPL_VAR NAME=old_scanwinagentinclusivedirschecked -->>Only scan the following directories (recursive)<br>
+<textarea name=directories rows=10 cols=60><TMPL_IF NAME=winagentpath_list><!-- TMPL_VAR NAME=winagentpath_list --></TMPL_IF></textarea><br>
+</td>
+</tr>
+<tr>
+<td>
+File Extensions <a href=help.html#extensions onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the file extensions in this list)</small>
+</td>
+<td>
+<input type=radio name=ext_choice value=everything onclick="document.profile.extensions.disabled=true" <!-- TMPL_VAR NAME=old_scanwinagentallfileschecked -->>Scan all files<br>
+<input type=radio name=ext_choice value=ignore onclick="document.profile.extensions.disabled=false" <!-- TMPL_VAR NAME=old_scanwinagentexceptionsfileschecked -->>Scan all files except files with the following extensions<br>
+<input type=radio name=ext_choice value=allow onclick="document.profile.extensions.disabled=false" <!-- TMPL_VAR NAME=old_scanwinagentinclusivefileschecked -->>Only scan files with the following file extensions<br>
+<textarea name=extensions rows=10 cols=60><!-- TMPL_VAR NAME=winagentfileext_list --></textarea>
+<br>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- end of windows agent div part 3 // -->
+
+<div id=regex>
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td width=200>
+Regular Expressions <a href=help.html#regexes onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a>
+</td>
+<td width=500>
+<TMPL_LOOP NAME=regexpattern_list>
+<input type=checkbox name="regex_<!-- TMPL_VAR NAME=regexpattern_number -->" <!-- TMPL_VAR NAME=regexpattern_checkedvaluetext --> value=1><!-- TMPL_VAR NAME=regexpattern_name --><br>
+</TMPL_LOOP>
+</td>
+</tr>
+<tr>
+<td>
+Credit Cards <a href=help.html#ccs onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the names of the regex aliases)</small>
+</td>
+<td>
+<textarea name=creditcards rows=10 cols=60><!-- TMPL_VAR NAME=ccalias_list --></textarea>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- end of regex div // -->
+
+<div id=win_agent_options_2>
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td width=200>
+ZIP Extensions <a href=help.html#zips onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Treat these extensions as ZIP files. Newline-delimit the names of file extensions.)</small>
+</td>
+<td width=500>
+<textarea name=zipfile rows=10 cols=60><!-- TMPL_VAR NAME=zipext_list --></textarea>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- end of win_agent_options_2 div //-->
+
+<div id=win_agent_options_4>
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td width=200>
+Upload URL <a href=help.html#upload_url onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(This is the URL on your web server)</small>
+</td>
+<td width=500><input type="text" name=url size=70 value="<!-- TMPL_VAR NAME=old_phonehomeurl -->"></td>
+</tr>
+<tr>
+<td>Upload URL username <a href=help.html#upload_user onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a></td>
+<td><input type="text" name=urluser size=30 value="<!-- TMPL_VAR NAME=old_phonehomeuser -->"></td>
+</tr>
+<tr>
+<td>Upload URL password <a href=help.html#upload_pass onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a></td>
+<td>
+<input name=urlpass type=password size=30>
+<TMPL_IF NAME=includeurlpasswordupdatecheckbox>
+<input type="checkbox" name="urlpwtoggle_checkbox" value="1" onchange="toggleUrlPasswordInput()" checked>Update existing password?
+</TMPL_IF>
+</td>
+</tr>
+<tr>
+<td>Time between uploads <a href=help.html#duration onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a></td>
+<td><input type="text" name=wait size=30 value="<!-- TMPL_VAR NAME=old_delaytime -->"></td>
+</tr>
+<tr>
+<td>Description <a href=help.html#description onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(will show as Windows Service description)</small></td>
+<td><input type="text" name=description size=70 value="<TMPL_VAR NAME=old_description -->"></td>
+</tr>
+</tbody>
+</table>
+<input type=hidden name=is_new value="<!-- TMPL_VAR NAME=is_new_value -->">
+</div>
+<!-- end of win_agent_options_4 div -->
+
+<div id=submission>
+<table class="table table-bordered table-sm">
+<tbody>
+<tr>
+<td>
+Concurrent deployments <a href=help.html#concurrent onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Only for initial deployment, not running)</small>
+</td>
+<td><input type="text" name=concurrent size=30 value="<!-- TMPL_VAR NAME=old_concurrent -->"></td>
+</tr>
+<tr>
+<td>Log Verbosity <a href=help.html#logs onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a></td>
+<td>
+<select name=debug>
+<TMPL_LOOP NAME=debugopts_list>
+<option value="<!-- TMPL_VAR NAME=debugopts_value -->" <!-- TMPL_VAR NAME=debugopts_selectedvaluetext -->><!-- TMPL_VAR NAME=debugopts_optiontext --></option>
+</TMPL_LOOP>
+</select>
+</td>
+</tr>
+<!-- <tr> -->
+<!-- <td width=200>Submit</td> -->
+<!-- <td width=500><input type=submit value="Submit"></td> -->
+<!-- </tr> -->
+</tbody>
+</table>
+<button type="submit" class="btn btn-primary btn-md">Submit</button>
+</div>
+</form>
+
+
+
+               </div>
+               </main>
+               <!-- Bootstrap core JavaScript
+               ================================================== -->
+               <!-- Placed at the end of the document so the pages load faster -->
+               <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+               <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery-slim.min.js"><\/script>')</script>
+               <script src="scripts/popper.min.js"></script>
+               <script src="scripts/bootstrap.min.js"></script>
+   </body>
+</html>

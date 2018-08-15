@@ -1,0 +1,52 @@
+heading
+{
+	color:#000000;font-family:arial;font-size:16pt;background-color:#FFFFFF;
+}
+
+td
+{
+	color:#000000;font-family:arial;font-size:10pt;background-color:#FFFFFF;
+}
+
+normal
+{
+	color:#000000;font-family:arial;font-size:10pt;background-color:#FFFFFF;
+}
+
+small
+{
+	color:#000000;font-family:arial;font-size:8pt;background-color:#FFFFFF;
+}
+
+a
+{
+	color:#000000;font-family:arial;font-size:10pt;background-color:#FFFFFF;
+}
+
+table.sample
+{
+	border-width: 1px;
+	border-spacing: 2px;
+	border-style: outset;
+	border-color: black;
+	border-collapse: collapse;
+	background-color: white;
+}
+table.sample th
+{
+	border-width: 1px;
+	padding: 2px;
+	border-style: inset;
+	border-color: black;
+	background-color: white;
+	-moz-border-radius: 0px 0px 0px 0px;
+}
+table.sample td
+{
+	border-width: 1px;
+	padding: 2px;
+	border-style: inset;
+	border-color: black;
+	background-color: white;
+	-moz-border-radius: 0px 0px 0px 0px;
+}

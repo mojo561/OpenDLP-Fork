@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <title>Download File</title>
+<!--       <link rel="stylesheet" type="text/css" href="styles/style_a.css"> -->
+<!--       <link rel="stylesheet" type="text/css" href="styles/style_b.css"> -->
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+      <script src=scripts/downloadfile.js></script>
+   </head>
+   <body class="bg-secondary">
+      <div class="card">
+      <h6>Download Options</h6>
+      <p>
+         <small>
+         <b>Download</b>: <!-- TMPL_VAR NAME=body_downloadfilename --><br>
+         <b>From</b>: <!-- TMPL_VAR NAME=body_downloadhost -->
+         </small>
+      </p>
+      </div>
+      <hr>
+      <form method="POST" action="./test5.html" enctype="application/x-www-form-urlencoded">
+      <div class="card">
+      <h5 class="card-header">Download File Over SSH</h5>
+      <div class="card-body">
+         <table class="table table-bordered table-sm">
+         <thead>
+            <tr>
+               <th>Username</th>
+               <th>Password</th>
+            </tr>
+         </thead>
+         <tbody>
+            <tr>
+               <td>
+                  <input type="text" name="sshusername" id="sshusername">
+               </td>
+               <td>
+                  <input type="password" name="sshpassword" id="sshpassword">
+               </td>
+            </tr>
+            <tr>
+               <td colspan="2">
+                  Use stored profile credentials instead?<input type="checkbox" name="useprofileinfo" value="1" onchange="toggleProfileInput()">
+               </td>
+            </tr>
+            <tr>
+               <td colspan="2"><input type="submit" name="dossh" value="Download" ></td>
+            </tr>
+         </tbody>
+         </table>
+      <!-- TMPL_VAR NAME=form_hiddenfields -->
+      </form>
+      </div>
+      </div>
+      
+      
+      <hr>
+      <form method="POST" action="./test3.html" enctype="application/x-www-form-urlencoded">
+      <div class="card">
+      <h5 class="card-header">Download File Encrypted With GPG</h5>
+      <div class="card-body">
+         <table class="table table-bordered table-sm">
+         <thead>
+            <tr>
+               <th>Recipient</th>
+               <th>Passphrase</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+               <td><input type="text" name="gpgrecipient" ></td>
+               <td><input type="password" name="gpgpassphrase" ></td>
+            </tr>
+            <tr>
+               <td colspan="2">
+                  <small>
+                     Note: This option requires that the public key (denoted by recipient) be installed
+                     on both this server as well as the client.
+                  </small>
+               </td>
+            </tr>
+            <tr>
+               <td colspan="2"><input type="submit" name="dogpg" value="Download" ></td>
+            </tr>
+         </tbody>
+         </table>
+      <!-- TMPL_VAR NAME=form_hiddenfields -->
+      </form>
+      </div>
+      </div>
+      
+      
+      <hr>
+      <form method="POST" action="./test4.html" enctype="application/x-www-form-urlencoded">
+      <div class="card">
+      <h5 class="card-header">Download File Over SMB With Encryption</h5>
+      <div class="card-body">
+         <table class="table table-bordered table-sm">
+         <tbody>
+         <tr>
+            <td>Note: SMB encryption is not supported on older versions of Windows</td>
+            <td><input type="submit" name="dosmbplusencrypt" value="Download" ></td>
+         </tr>
+         </tbody>
+         </table>
+      </div>
+      </div>
+      <!-- TMPL_VAR NAME=form_hiddenfields -->
+      </form>
+      
+      
+      <hr>
+      <form method="GET" action="./download_file.html" enctype="application/x-www-form-urlencoded">
+      <div class="card">
+      <h5 class="card-header">Download File Over SMB Without Encryption</h5>
+      <div class="card-body">
+         <table class="table table-bordered table-sm">
+         <tbody>
+            <tr>
+               <td class="border border-danger">Warning: Files with potentially sensitive information will be transferred over the network unencrypted</td>
+               <td><input type="submit" name="dosmbnoencrypt" value="Download" ></td>
+            </tr>
+         </tbody>
+         </table>
+      <!-- TMPL_VAR NAME=form_hiddenfields -->
+      </div>
+      </div>
+      </form>
+   </body>
+</html>

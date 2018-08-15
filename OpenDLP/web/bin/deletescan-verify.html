@@ -1,0 +1,153 @@
+#!/usr/bin/perl
+
+# Copyright Andrew Gavin 2009-2012
+# Modifications by Charles Smith, N2 Net Security,Inc. 2011-2012
+#
+# This file is part of OpenDLP.
+#
+# OpenDLP is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# OpenDLP is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with OpenDLP.  If not, see <http://www.gnu.org/licenses/>.
+
+
+use CGI qw/:standard/;
+use DBI;
+use HTML::Template;
+
+my $view_template = HTML::Template->new(filename => "deletescan-verify_view.tmpl");
+$view_template->param(opendlpversion => get_version());
+
+my $MAX_LENGTH_SCAN = 64;
+my $version = get_version();
+
+my $db_admin_file = "../etc/db_admin";
+
+my $is_valid = 1;
+#my @profiles = ();
+my @tmpl_errorlist = ();
+my @tmpl_infolist = ();
+
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+my ($db_username, $db_password) = split( ":", $db_line );
+
+if( request_method() ne "POST" )
+{
+	$is_valid = 0;
+	push(@tmpl_errorlist, {erroritem => "Only POST requests are allowed. Try starting <a href=deletescan.html>here</a>."});
+}
+
+#my @scannames = param("scanname");
+#########################
+#new: Josh - June 24 2018
+#########################
+#https://metacpan.org/pod/distribution/CGI/lib/CGI.pod#Fetching-the-value-or-values-of-a-single-named-parameter
+my @scannames = multi_param("scanname");
+
+foreach my $scn (@scannames) {
+  if( length( $scn ) > $MAX_LENGTH_SCAN ) 	{
+    $is_valid = 0;
+    push(@tmpl_errorlist, {erroritem => ""});
+  }
+  if( $scn !~ /^[a-z0-9\ \,\.\-\_]+$/i ) {
+    $is_valid = 0;
+    push(@tmpl_errorlist, {erroritem => "Scan name can only contain the following characters, including whitespace: A-Z0-9,.-_"});
+  }  
+}
+
+if( $is_valid )
+{
+  foreach my $scanname(@scannames) { 
+    my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+    my $string = "DELETE from results where scan=?;";
+    my $sth = $dbh->prepare( $string );
+    my $ret = $sth->execute( $scanname );
+    if( $ret > 0 )
+    {
+      push(@tmpl_infolist, {logitem => "Successfully deleted results for scan \"$scanname\""});
+    }
+
+    my $string = "DELETE from systems where scan=?;";
+    my $sth = $dbh->prepare( $string );
+    my $ret = $sth->execute( $scanname );
+    if( $ret > 0 )
+    {
+      push(@tmpl_infolist, {logitem => "Successfully deleted system correlations for scan \"$scanname\""});
+    }
+
+    my $string = "DELETE from falsepositives where scan=?;";
+    my $sth = $dbh->prepare( $string );
+    my $ret = $sth->execute( $scanname );
+    if( $ret > 0 )
+    {
+      push(@tmpl_infolist, {logitem => "Successfully deleted false positives for scan \"$scanname\""});
+    }
+
+    my $string = "DELETE from logs where scan=?;";
+    my $sth = $dbh->prepare( $string );
+    my $ret = $sth->execute( $scanname );
+    if( $ret > 0 )
+    {
+      push(@tmpl_infolist, {logitem => "Successfully deleted logs for scan \"$scanname\""});
+    }
+
+    my $string = "DELETE from agentless where scan=?;";
+    my $sth = $dbh->prepare( $string );
+    my $ret = $sth->execute( $scanname );
+    if( $ret > 0 )
+    {
+      push(@tmpl_infolist, {logitem => "Successfully deleted agentless file data for scan \"$scanname\""});
+    }
+    $sth->finish;
+    $dbh->disconnect;
+    $view_template->param(infolist => \@tmpl_infolist);
+  }
+}
+else
+{
+    $view_template->param(errorlist => \@tmpl_errorlist);
+}
+
+print "Content-type: text/html\n\n", $view_template->output;
+
+sub filter
+{
+	my $thing = shift;
+	$thing =~ s/\&/\&amp;/g;
+	$thing =~ s/\#/&#35;/g;
+	$thing =~ s/"/&#34;/g;
+	$thing =~ s/\%/&#37;/g;
+	$thing =~ s/\'/&#39;/g;
+	$thing =~ s/\//&#47;/g;
+	$thing =~ s/</&#60;/g;
+	$thing =~ s/>/&#62;/g;
+	$thing =~ s/\[/&#91;/g;
+	$thing =~ s/\\/&#92;/g;
+	$thing =~ s/\]/&#93;/g;
+	$thing =~ s/`/&#96;/g;
+	$thing =~ s/{/&#123;/g;
+	$thing =~ s/\|/&#124;/g;
+	$thing =~ s/}/&#125;/g;
+	return $thing;
+}
+
+sub get_version
+{
+	open( V, "<../etc/version" );
+	my $v = <V>;
+	close( V );
+	chomp $v;
+	return $v;
+}
+

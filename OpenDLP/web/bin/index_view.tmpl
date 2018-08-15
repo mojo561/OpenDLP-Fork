@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+      <meta name="description" content="OpenDLP <!-- TMPL_VAR NAME=opendlpversion -->">
+      <meta name="author" content="JNR">
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+   </head>   
+   <body>
+<!--    NAV     -->
+<TMPL_INCLUDE NAME="./test_includeme.tmpl">
+<!--    //NAV   -->
+      <main role="main" class="mr-5 ml-md-1 pt-5 mt-3 mb-5 d-flex justify-content-center">
+      <div class="container">
+      <h1>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></h1>
+      <normal>
+          OpenDLP is a free and open source, agent-based, centrally-managed, massively distributable data loss prevention tool released under the GPL. OpenDLP can identify sensitive data at rest on thousands of systems simultaneously. OpenDLP has five components:<br><br>
+          <u>Web Application</u>
+          <ul>
+              <li>Automatically deploy and start agents over SMB</li>
+              <li>When done, automatically stop, uninstall, and delete agents over SMB</li>
+              <li>Pause, resume, and forcefully uninstall agents in an entire scan or on individual systems</li>
+              <li>Concurrently and securely receive results from hundreds or thousands of deployed agents</li>
+              <li>Create Perl-compatible regular expressions (PCREs) for finding sensitive data at rest</li>
+              <li>Create reusable profiles for scans that include whitelisting or blacklisting directories and file extensions</li>
+              <li>Review findings and identify false positives</li>
+              <li>Export results as XML</li>
+              <li>Manage Windows and UNIX agentless OS scans, Windows Metasploit agent scans, Windows agentless share scans, and database scans</li>
+          </ul>
+          <u>Windows Agent</u>
+          <ul>
+              <li>Runs on Windows 2000 and later systems</li>
+              <li>Written in C with no .NET Framework requirements</li>
+              <li>Runs as a Windows Service at low priority so users do not see or feel it</li>
+              <li>Resumes automatically upon system reboot with no user interaction</li>
+              <li>Securely transmit results to web application at user-defined intervals</li>
+              <li>Uses PCREs to identify sensitive data inside files</li>
+              <li>Performs additional checks on potential credit card numbers to reduce false positives</li>
+          </ul>
+          <u>Metasploit Agent</u><br>
+          Everything the Windows Agent scan does, plus:
+          <ul>
+              <li>Completely integreated with Metasploit through Messagepack RPC</li>
+              <li>Retrieves list of exploited machines from Metasploit and displays in OpenDLP GUI</li>
+              <li>Deploys OpenDLP directly from Metasploit to exploied machines of your choosing</li>
+              <li>Domain credentials not required, if you can "get system" on the target from a metasploit ponsole, you can deploy OpenDLP</li>
+          </ul>
+          <u>Agentless Database Scans</u><br>
+          Starting with OpenDLP 0.3, you can now perform agentless data discovery against the following databases:
+          <ul>
+              <li>Microsoft SQL server databases: Supports authenticating to databases either with SQL server credentials (the "sa" account, for example) or with Windows OS (domain) credentials.</li>
+              <li>MySQL</li>
+          </ul>
+          <u>Agentless OS and Share Scans</u><br>
+          Starting with OpenDLP 0.4, you can now perform agentless data discovery against the following systems:
+          <ul>
+              <li>Microsoft Windows operating systems over SMB</li>
+              <li>UNIX operating systems over SSH</li>
+              <li>Microsoft Windows network shares over SMB</li>
+          </ul>
+          <u>To Get Started</u><br>
+          Assuming the README has been followed and OpenDLP is properly installed on the web server, you can:
+          <ul>
+              <li><a href="regex-delete.html">Review existing PCREs</a> and <a href="regex.html">add your own</a></li>
+              <li><a href="profiles.html">Create a profile</a> with PCREs, appropriate authentication credentials, and other policy settings</li>
+              <li><a href="startscan.html">Start a scan</a> by providing a list of Windows systems</li>
+              <li><a href="viewresults.html">Review results</a> and mark false positives</li>
+              <li><a href="exportscan.html">Export the scan as XML</a> and use the data offline</li>
+          </ul>
+          OpenDLP is maintained by <a href="mailto:andrew.opendlp@gmail.com">Andrew Gavin</a> at <a href="https://code.google.com/archive/p/opendlp/">https://code.google.com/archive/p/opendlp/</a>.
+      </normal>
+      </div>
+      </main>
+      <!-- Bootstrap core JavaScript
+      ================================================== -->
+      <!-- Placed at the end of the document so the pages load faster -->
+      <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+      <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery-slim.min.js"><\/script>')</script>
+      <script src="scripts/popper.min.js"></script>
+      <script src="scripts/bootstrap.min.js"></script>
+   </body>
+</html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+      <meta name="description" content="OpenDLP <!-- TMPL_VAR NAME=opendlpversion -->">
+      <meta name="author" content="JNR">
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+   </head>
+   <body>
+<!--    NAV     -->
+<TMPL_INCLUDE NAME="./test_includeme.tmpl">
+<!--    //NAV   -->
+
+      <main role="main" class="mr-5 ml-md-5 mb-5 pt-5 mt-3">
+
+<TMPL_IF NAME=useforma>
+<!-- // Form A -->
+<h2>View Logs</h2><br>
+<div class="w-25">
+<form method=GET action=logs.html>
+<table class="table table-bordered table-hover table-sm">
+<thead>
+<tr>
+<th>Details</th>
+<th>Scan name</th>
+</tr>
+</thead>
+<tbody>
+<TMPL_LOOP NAME=tablea_scanloglist>
+<tr>
+<td><input type=radio name=scanname value="<TMPL_VAR NAME=tablea_scanlogitem>"></td>
+<td><TMPL_VAR NAME=tablea_scanlogitem></td>
+</tr>
+</TMPL_LOOP>
+</tbody>
+</table>
+<button type="submit" class="btn btn btn-primary btn-md">View Logs</button>
+</form>
+</div>
+<!-- Form A // -->
+</TMPL_IF>
+
+
+<TMPL_IF NAME=useformb>
+<!-- // Form B -->
+<h2>View Logs</h2><br>
+<h5>Select a system to view its logs for scan "<TMPL_VAR NAME=scanname>":</h5><br>
+<div class="w-100">
+<form method=GET action=logs.html>
+<input type=hidden name=scanname value="<TMPL_VAR NAME=scanname>">
+<table class="table table-bordered table-hover table-sm">
+<thead>
+<tr>
+   <th>&nbsp;</th>
+   <th>Network name</th>
+   <th>IP address</th>
+   <th>Status</th>
+   <th>Step</th>
+   <th>Files done</th>
+   <th>Total files</th>
+   <th>Bytes done</th>
+   <th>Total bytes</th>
+   <th>Updated</th>
+   <th>Findings</th>
+   <th>Log Entries</th>
+</tr>
+</thead>
+<tbody>
+
+<TMPL_LOOP NAME=tableb_scanloglist>
+<tr>
+<td><input type=radio name=system value="<TMPL_VAR NAME=tracking>"></td>
+<td><TMPL_VAR NAME=tmpl_system></td>
+<td><TMPL_VAR NAME=printme_ip></td>
+<td><TMPL_VAR NAME=control></td>
+<td><TMPL_VAR NAME=scanstatus></td>
+<td align=right><TMPL_VAR NAME=filesdone></td>
+<td align=right><TMPL_VAR NAME=filestotal></td>
+<td align=right><TMPL_VAR NAME=bytesdone></td>
+<td align=right><TMPL_VAR NAME=bytestotal></td>
+<td><TMPL_VAR NAME=scanupdatetime></td>
+<td align=right><TMPL_VAR NAME=count></td>
+<td align=right><TMPL_VAR NAME=logs></td>
+</tr>
+</TMPL_LOOP>
+</tbody>
+</table>
+<button type="submit" class="btn btn btn-primary btn-md">View Logs</button>
+</form>
+</div>
+<!-- Form B // -->
+</TMPL_IF>
+
+
+<TMPL_IF NAME=useformc>
+<!-- // Form C -->
+<h2><TMPL_VAR NAME=formcheader></h2><br>
+<div class="w-25">
+<table class="table table-bordered table-sm">
+<tbody>
+   <tr>
+      <th>Profile</th>
+      <td align=right><TMPL_VAR NAME=profile></td>
+   </tr>
+   <tr>
+      <th>Status</th>
+      <td align=right><TMPL_VAR NAME=control></td>
+   </tr>
+   <tr>
+      <th>Step</th>
+      <td align=right><TMPL_VAR NAME=scanstatus></td>
+   </tr>
+   <tr>
+      <th>Files Done</th>
+      <td align=right><TMPL_VAR NAME=filesdone></td>
+   </tr>
+   <tr>
+      <th>Files Total</th>
+      <td align=right><TMPL_VAR NAME=filestotal></td>
+   </tr>
+   <tr>
+      <th>Bytes Done</th>
+      <td align=right><TMPL_VAR NAME=bytesdone></td>
+   </tr>
+   <tr>
+      <th>Bytes Total</th>
+      <td align=right><TMPL_VAR NAME=bytestotal></td>
+   </tr>
+   <tr>
+      <th>Total Findings</th>
+      <td align=right><TMPL_VAR NAME=total></td>
+   </tr>
+   <tr>
+      <th>False Positives</th>
+      <td align=right><TMPL_VAR NAME=fp_count></td>
+   </tr>
+   <tr>
+      <th>Valid Findings</th>
+      <td align=right><TMPL_VAR NAME=diff></td>
+   </tr>
+   <tr>
+      <th>Updated</th>
+      <td align=right><TMPL_VAR NAME=scanupdatetime></td>
+   </tr>
+</tbody>
+</table>
+</div>
+
+<div class="w-75">
+<table class="table table-bordered table-striped table-sm">
+<thead>
+   <tr>
+      <th>#</th>
+      <th>Timestamp</th>
+      <th>Log Entry</th>
+   </tr>
+</thead>
+<tbody>
+<TMPL_LOOP NAME=logdatalist>
+   <tr>
+      <td><TMPL_VAR NAME=logdataitem_row_counter></td>
+      <td><TMPL_VAR NAME=logdataitem_time></td>
+      <td><TMPL_VAR NAME=logdataitem_logdata></td>
+   </tr>
+</TMPL_LOOP>
+</tbody>
+</table>
+</div>
+<!-- Form C // -->
+</TMPL_IF>
+
+   </main>
+   <!-- Bootstrap core JavaScript
+   ================================================== -->
+   <!-- Placed at the end of the document so the pages load faster -->
+   <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+   <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery-slim.min.js"><\/script>')</script>
+   <script src="scripts/popper.min.js"></script>
+   <script src="scripts/bootstrap.min.js"></script>
+   </body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+      <meta name="description" content="OpenDLP <!-- TMPL_VAR NAME=opendlpversion -->">
+      <meta name="author" content="JNR">
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+      <script src="scripts/startscan.js"></script>
+   </head>   
+   <body>
+<!--    NAV     -->
+<TMPL_INCLUDE NAME="./test_includeme.tmpl">
+<!--    //NAV   -->
+
+      <main role="main" class="mr-5 ml-md-5 pt-5 mt-3 d-flex justify-content-center">
+      <div class="w-50">
+               
+               <div class="table-responsive">
+               <h2>Start a New Scan</h2>
+               <form id="form1" name="form1" method=post action=start-verify.html>
+                  <table class="table table-bordered table-sm">
+                  <tbody>
+                     <tr>
+                        <td>Scan name</td>
+                        <td><input name=scanname></td>
+                     </tr>
+                     <tr>
+                        <td>Profile</td>
+                        <td>
+                           <select name="profile" id="profile" onchange='changeDisplay(this);'>
+                           <option>Select one...</option>
+<TMPL_LOOP NAME=option_output_list>
+                           <option value="<!-- TMPL_VAR NAME=scan_profilename -->"><!-- TMPL_VAR NAME=option_displaytext --></option>
+</TMPL_LOOP>
+                           </select>
+                           <small> (or create a <a href="profiles.html">new profile</a>)</small>
+                        </td>
+                     </tr>
+                  </tbody>
+                  </table>
+                  <div id="BasicOptions" style="display:none">
+                     <table class="table table-bordered table-sm">
+                     <tbody>
+                        <tr>
+                           <td>Notes</td>
+                           <td>
+                           <p>
+                              If you are doing a Windows Share scan, enter systems in this format:<br>
+                              \\1.2.3.4\Share<br>
+                              Otherwise, just list IP addresses.<br>
+                           </p>
+                           </td>
+                        </tr>
+                        <tr>
+                           <td>Systems to scan<br><small>(newline-delimited)</small></td>
+                           <td><textarea rows=8 name=systems cols=50></textarea></td>
+                        </tr>
+                        <tr>
+                           <td><br></td>
+                           <!--<td><input type=submit value="Start"></td>-->
+                           <td><button type="submit" class="btn btn-primary btn-md">Start</button></td>
+                        </tr>
+                     </tbody>
+                     </table>
+                  </div>
+                  <div id="MetaOptions"  style="display:none">
+                     <table class="table table-bordered table-sm">
+                     <tbody>
+                        <tr>
+                           <td width=100>Notes</td>
+                           <td width=450>
+                              Retrieve a list of sessions currently exploited by the Metasploit server (from the selected profile).
+                              Once you press "Get Sessions" below, you may pick and choose which sessions/systems you wish to 
+                              deploy to. 
+                           </td>
+                        </tr>
+                        <tr>
+                           <td>&nbsp;</td>
+                           <!--<td><input type=submit value="Get Sessions"></td> -->
+                           <td><button type="submit" class="btn btn-primary btn-md">Get Sessions</button></td>
+                        </tr>
+                     </tbody>
+                     </table>
+                  </div>
+               </form>
+               </div>
+
+      </div>
+      </main>
+    <!-- Bootstrap core JavaScript
+    ================================================== -->
+    <!-- Placed at the end of the document so the pages load faster -->
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+    <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery-slim.min.js"><\/script>')</script>
+    <script src="scripts/popper.min.js"></script>
+    <script src="scripts/bootstrap.min.js"></script>
+      
+      
+   </body>
+</html>

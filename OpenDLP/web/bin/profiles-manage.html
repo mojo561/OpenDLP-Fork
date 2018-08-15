@@ -1,0 +1,65 @@
+#!/usr/bin/perl
+
+# Copyright Andrew Gavin 2009-2012
+# Modified by Josh 2018.06.30
+#
+# This file is part of OpenDLP.
+#
+# OpenDLP is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# OpenDLP is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with OpenDLP.  If not, see <http://www.gnu.org/licenses/>.
+
+
+use CGI qw/:standard/;
+use DBI;
+use HTML::Template;
+
+my $db_admin_file = "../etc/db_admin";
+my( $db_username, $db_password ) = "";
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+($db_username, $db_password) = split( ":", $db_line );
+
+my $view_template = HTML::Template->new(filename => 'profiles-manage_view.tmpl');
+my @output_list = ();
+
+my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+my $string = "SELECT number,profile from profiles order by profile";
+my $sth = $dbh->prepare( $string );
+$sth->execute();
+while( my $results = $sth->fetchrow_hashref() )
+{
+    my $number = $results->{"number"};
+    my %output_element = (  profilenum => "profile_$number",
+                            scan_profilename => $results->{"profile"});
+    push @output_list, \%output_element;
+}
+$sth->finish;
+$dbh->disconnect;
+
+if( scalar(@output_list) > 0 )
+{
+    $view_template->param(output_list => \@output_list);
+}
+$view_template->param(opendlpversion => get_version());
+print "Content-type: text/html\n\n", $view_template->output;
+
+sub get_version
+{
+	open( V, "<../etc/version" );
+	my $v = <V>;
+	close( V );
+	chomp $v;
+	return $v;
+}

@@ -1,0 +1,25 @@
+table.gpgtable
+{
+	border-width: 1px;
+	border-spacing: 2px;
+	border-style: outset;
+	border-color: black;
+	border-collapse: collapse;
+	background-color: blue;
+}
+table.gpgtable th
+{
+	border-width: 1px;
+	padding: 2px;
+	border-style: inset;
+	border-color: black;
+	-moz-border-radius: 0px 0px 0px 0px;
+}
+table.gpgtable td
+{
+	border-width: 1px;
+	padding: 2px;
+	border-style: inset;
+	border-color: black;
+	-moz-border-radius: 0px 0px 0px 0px;
+}

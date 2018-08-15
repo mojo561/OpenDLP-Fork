@@ -1,0 +1,296 @@
+#!/usr/bin/perl
+
+use CGI qw/:standard/;
+use DBI;
+use MIME::Base64;
+use HTML::Template;
+use Net::OpenSSH;
+my $pathtosecret = "../etc/gpgsecret";
+use Capture::Tiny qw/capture/;
+use Encode;
+
+my $db_admin_file = "../etc/db_admin";
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+($db_username, $db_password) = split( ":", $db_line );
+
+my $query = CGI->new;
+my $file = $query->param('file');
+my $ip = $query->param('ip');
+my $profile = $query->param('profile');
+my $sessionid = $query->param('sessionid');
+my $sshusername = $query->param('sshusername');
+my $sshpassword = $query->param('sshpassword');
+my $useprofileinfo = $query->param('useprofileinfo');
+
+if($useprofileinfo ne "1" && $sshusername eq "")
+{
+    die; # TODO: present an error message... 'you forgot your ssh username!'
+}
+
+if( $profile ne "" && $ip ne "" && $file ne "")
+{
+    $file = decode_base64( $file );
+	$ip = decode_base64( $ip );
+	$profile = decode_base64( $profile );
+	
+	if($useprofileinfo eq "1")
+	{
+        #we're using stored credentials...
+        my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+        my $string = "SELECT username,gpgpassword from profiles where profile=?";
+        my $sth = $dbh->prepare( $string );
+        $sth->execute( $profile );
+        my $results = $sth->fetchrow_hashref();
+        $sshusername = $results->{"username"};
+        
+        my($stdout, $stderr) = capture {
+            open(my $GPG, "| gpg --quiet --batch --homedir /home/www-data/.gnupg --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+            print $GPG $results->{"gpgpassword"};
+            close($GPG);
+        };
+
+        my $lt = localtime();
+        if($stdout eq "")
+        {
+            print "Password decryption error. Please check the error logs!<br><br>\n";
+            warn "[$lt] GPG ran into an issue: $stderr";
+        }
+        else
+        {
+            $sshpassword = decode_base64($stdout);
+            warn "[$lt] The password was sucessfully decrypted";
+        }
+        
+        $sth->finish();
+		$dbh->disconnect();
+	}
+	
+	my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+    my $string = "SELECT scantype from profiles where profile=?";
+    my $sth = $dbh->prepare( $string );
+    $sth->execute( $profile );
+    my $results = $sth->fetchrow_hashref();
+    my $scantype = $results->{"scantype"}; # NOTE: will probably need more data...
+	$sth->finish();
+    $dbh->disconnect();
+
+    my %opts;
+
+    if($sshpassword ne "")
+    {
+        %opts = (user => $sshusername, password => $sshpassword, batch_mode => 1);
+    }
+    else
+    {
+        %opts = (user => $sshusername, batch_mode => 1); # TODO does this work?
+    }
+
+	if($scantype eq "win_agent")
+	{
+        my @file_parts = split("\\\\", $file);
+        my $download_filename = $ip . "-" . @file_parts[-1];
+        
+        my $ssh = Net::OpenSSH->new($ip, %opts);
+        if($ssh->error)
+        {
+            if($ssh-error =~ m/the authenticity of the target host can't be established; the remote host public key is probably not present/)
+            {
+                #let's try to add the key to our known_hosts file...
+                my $testcmd = "ssh-keyscan -H -t rsa $extract_ip >> /var/www/.ssh/known_hosts";
+                `$testcmd`;
+                $ssh = Net::OpenSSH->new($extract_ip, %opts);
+                $ssh->error and die $ssh->error;
+            }
+            else
+            {
+                die $ssh->error;
+            }
+        }
+        
+        ####################
+        #NEW: 2018.08.12
+        #GDPR stuff...
+        if($file =~ m/c:\\users/i)
+        {
+            my $exuname = @file_parts[2];
+            #hash function borrowed from: https://gist.github.com/jermity/d38da10534a7a56af32d
+my $pwrsh_singleuser = qq{\$a=(Get-WmiObject Win32_DiskDrive);
+\$b=(Get-WmiObject Win32_ComputerSystemProduct);
+\$c="$exuname";
+\$d=\$c+\$b.UUID+\$a.SerialNumber+\$a.Signature;
+\$sb=New-Object System.Text.StringBuilder;
+[System.Security.Cryptography.HashAlgorithm]::Create("SHA512").ComputeHash([System.Text.Encoding]::UTF8.GetBytes(\$d)) |%{[Void]\$sb.Append(\$_.ToString("x2"))}
+echo \$sb.ToString();
+};
+            $pwrsh_singleuser = encode_base64(encode('utf16le', $pwrsh_singleuser));
+            $pwrsh_singleuser =~ s/[\s]//g;
+            my $cmdoutput = $ssh->capture("powershell -NonInteractive -NoProfile -NoLogo -EncodedCommand $pwrsh_singleuser");
+            my @cmdoutputlist = ();
+            if($cmdoutput =~ m/CLIXML\s+([^<]+)/)
+            {
+                $cmdoutput = $1;
+                $cmdoutput =~ s/\r//g;
+                $cmdoutput =~ s/\n$//g;
+                @cmdoutputlist = split('\n', $cmdoutput);
+            }
+            else
+            {
+                #some versions of powershell output just the text, wrapped at 80 chars...
+                my @tmpsplit = split('\n', $cmdoutput);
+                foreach my $i(0 .. $#tmpsplit)
+                {
+                    if($tmpsplit[$i] =~ m/[a-f0-9]{79,80}/i)
+                    {
+                        my $tmp = $tmpsplit[$i] . $tmpsplit[$i+1];
+                        $tmp =~ s/[^a-f0-9]//gi;
+                        push(@cmdoutputlist, $tmp);
+                    }
+                }
+            }
+            #https://www.itworld.com/article/2786067/development/repeating-yourself--the-x-operator.html
+            #https://stackoverflow.com/a/5154249
+            my $search = join (', ', ('?') x @cmdoutputlist);
+            
+            my $tempdbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username, $db_password);
+            my $string = "select username from gdprconsent where hash in ( $search ) and username = ?";
+            my $tempsth = $tempdbh->prepare($string);
+            my $time2die = 0;
+            $tempsth->execute(@cmdoutputlist, $exuname);
+            if(my $tresults = $tempsth->fetchrow_hashref())
+            {
+                my $gdpr_username = $tresults->{"username"};
+                
+                #database entry shows that user consents, but is that information up to date?
+                #double check by checking for file OpenDLP_GDPR\gdpr_deny_consent.dat in the user home dir
+                my $gdprpath = "c:\\Users\\mal\\OpenDLP_GDPR\\gdpr_deny_consent.dat";
+                my $output = $ssh->capture("if exist \"$gdprpath\" ( echo yup )");
+                if( $output =~ m/yup/ )
+                {
+                    #database information is out of date...
+                    $time2die = 1;
+                }
+            }
+            else
+            {
+                $time2die = 2;
+            }
+            $tempsth->finish;
+            $tempdbh->disconnect;
+            if($time2die)
+            {
+                my $error_template = HTML::Template->new(filename => 'test5_error.tmpl');
+                $error_template->param(error_title => "Permission Denied");
+                if($time2die == 1)
+                {
+                    $error_template->param(error_body => "<h2>Permission Denied</h2><br>We do not have consent (<b>Database needs to be updated</b>)!");
+                }
+                else
+                {
+                    $error_template->param(error_body => "<h2>Permission Denied</h2><br>We do not have consent!");
+                }
+                print "Content-type: text/html\n\n", $error_template->output;
+                die;
+            }
+        }
+        ####################
+
+        my $output = $ssh->capture("type \"$file\"");
+        if($ssh->error)
+        {
+            warn $ssh->error;
+        }
+        else
+        {
+            print "Content-Type: text/html\n";
+            print "Content-Disposition: attachment; filename=\"$download_filename\"\n\n";
+            print $output;
+        }
+	}
+	elsif($scantype eq "unix_agentless") # TODO needs more testing
+	{
+        my @file_parts = split("/", $file);
+        my $download_filename = $ip . "-" . @file_parts[-1];
+        
+        my $ssh = Net::OpenSSH->new($ip, %opts);
+        if($ssh->error)
+        {
+            if($ssh-error =~ m/the authenticity of the target host can't be established; the remote host public key is probably not present/)
+            {
+                #let's try to add the key to our known_hosts file...
+                my $testcmd = "ssh-keyscan -H -t rsa $ip >> /var/www/.ssh/known_hosts";
+                `$testcmd`;
+                $ssh = Net::OpenSSH->new($ip, %opts);
+                $ssh->error and die $ssh->error;
+            }
+            else
+            {
+                die $ssh->error;
+            }
+        }
+        
+        if($ssh->scp_get($file, "/tmp/$download_filename"))
+        {
+            open(my $TMPFILE, '<', "/tmp/$download_filename");
+            print "Content-Type: text/html\n";
+            print "Content-Disposition: attachment; filename=\"$download_filename\"\n\n";
+            while (my $read = <$TMPFILE>)
+            {
+                chomp($read);
+                print "$read\n";
+            }
+            close($TMPFILE);
+            unlink("/tmp/$download_filename");
+        }
+	}
+	elsif($scantype eq "win_share" || $scantype eq "win_agentless") # TODO needs more testing
+	{
+        my $path = $file;
+        $path =~ s/smb://;
+        $path =~ s~/~\\~g;
+        
+        $ip =~ m/([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/;
+        my $extract_ip = $1;
+        
+        my @file_parts = split("/", $file);
+        my $download_filename = $extract_ip . "-" . @file_parts[-1];
+        
+        my $ssh = Net::OpenSSH->new($extract_ip, %opts);
+        if($ssh->error)
+        {
+            if($ssh-error =~ m/the authenticity of the target host can't be established; the remote host public key is probably not present/)
+            {
+                #let's try to add the key to our known_hosts file...
+                my $testcmd = "ssh-keyscan -H -t rsa $extract_ip >> /var/www/.ssh/known_hosts";
+                `$testcmd`;
+                $ssh = Net::OpenSSH->new($extract_ip, %opts);
+                $ssh->error and die $ssh->error;
+            }
+            else
+            {
+                die $ssh->error;
+            }
+        }
+        
+        my $output = $ssh->capture("type \"$path\"");
+        if($ssh->error)
+        {
+            warn $ssh->error;
+        }
+        else
+        {
+            print "Content-Type: text/html\n";
+            print "Content-Disposition: attachment; filename=\"$download_filename\"\n\n";
+            print $output;
+        }
+	}
+	else
+	{
+        my $error_template = HTML::Template->new(filename => 'test5_error.tmpl');
+        $error_template->param(error_title => "SSH Not yet Implemented");
+        $error_template->param(error_body => "<h2>TODO: not implemented for $scantype...</h2>");
+        print "Content-type: text/html\n\n", $error_template->output;
+	}
+}

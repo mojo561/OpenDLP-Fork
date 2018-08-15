@@ -1,0 +1,161 @@
+#!/usr/bin/perl
+
+use CGI qw/:standard/;
+use DBI;
+use MIME::Base64;
+
+use HTML::Template;
+use Capture::Tiny qw/capture/;
+
+my $db_admin_file = "../etc/db_admin";
+my $pathtosecret = "../etc/gpgsecret";
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+($db_username, $db_password) = split( ":", $db_line );
+
+my $query = CGI->new;
+$file = $query->param('file');
+$ip = $query->param('ip');
+$profile = $query->param('profile');
+$sessionid = $query->param('sessionid');
+
+
+if( $profile ne "" && $ip ne "" && $file ne "" )
+{
+    $file = decode_base64( $file );
+	$ip = decode_base64( $ip );
+	$profile = decode_base64( $profile );
+	
+	my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+	my $string = "SELECT username,password,domain,hash,scantype,metauser,metapass,metahost,metaport,metapath,metalatency,metatimeout,metassl,gpgpassword from profiles where profile=?";
+	my $sth = $dbh->prepare( $string );
+	$sth->execute( $profile );
+	my $results = $sth->fetchrow_hashref();
+	my $username   = $results->{"username"};
+	#my $password   = $results->{"password"};
+	my $password = "";
+	my $domain     = $results->{"domain"};
+	my $smbhash    = $results->{"hash"};
+	my $scantype   = $results->{"scantype"};
+	my $metauser   = $results->{"metauser"};
+	my $metapass   = $results->{"metapass"};
+	my $metahost   = $results->{"metahost"};
+	my $metaport   = $results->{"metaport"};
+	my $metapath   = $results->{"metapath"};
+	my $metalatency= $results->{"metalatency"};
+	my $metatimeout= $results->{"metatimeout"};
+	my $metassl    = $results->{"metassl"};
+	
+	my($stdout, $stderr) = capture {
+        open(my $GPG, "| gpg --quiet --batch --homedir /home/www-data/.gnupg --pinentry-mode loopback --passphrase-fd 3 3<$pathtosecret");
+        print $GPG $results->{"gpgpassword"};
+        close($GPG);
+    };
+
+    my $lt = localtime();
+    if($stdout eq "")
+    {
+        #print "Password decryption error. Please check the error logs!<br><br>\n"; TODO: need to notify
+        warn "[$lt] GPG ran into an issue: $stderr";
+    }
+    else
+    {
+        $password = decode_base64($stdout);
+        warn "[$lt] The password was sucessfully decrypted";
+    }
+
+	if($scantype eq "win_agent")
+	{
+        my @file_parts = split(":", $file);
+        my @otherfile_parts = split("\\\\", @file_parts[1]);
+        my $download_filename = $ip . "-" . @otherfile_parts[-1];
+        my $share = "@file_parts[0]\$";
+
+        my ($stdout, $stderr) = capture {
+            system ("smbclient '\\\\$ip\\$share' -U $username\%$password -e -E -c \"get \\\"@file_parts[1]\\\" /dev/fd/1\"");
+        };
+        
+        if(length($stdout) == 0 && $stderr =~ m/NT_STATUS_*/)
+        {
+            my $error_template = HTML::Template->new(filename => 'test4_error.tmpl');
+            $error_template->param(error_title => "SMB3 File Download Error");
+            $error_template->param(error_body => "Couldn't download @otherfile_parts[-1].<br>Error log:<br><textarea cols=\"100\">$stderr</textarea>");
+            print "Content-type: text/html\n\n", $error_template->output;
+        }
+        else
+        {
+            print "Content-Type: text/html\n";
+            print "Content-Disposition: attachment; filename=\"$download_filename\"\n\n";
+            print $stdout;
+        }
+	}
+	elsif($scantype eq "unix_agentless")
+	{
+        my $path = $file;
+        $path =~ s~^/([^/]+)/~~m;
+        my $driveletter = $1;
+        
+        my @file_parts = split("/", $file);
+        my $download_filename = $ip . "-" . @file_parts[-1];
+        
+        my $servicename = "//$ip/$driveletter\$";
+        
+        my ($stdout, $stderr) = capture {
+            system ("smbclient '$servicename' -U $username\%$password -e -E -c \"get \\\"$path\\\" /dev/fd/1\"");
+        };
+        
+        if(length($stdout) == 0 && $stderr =~ m/NT_STATUS_*/)
+        {
+            my $error_template = HTML::Template->new(filename => 'test4_error.tmpl');
+            $error_template->param(error_title => "SMB3 File Download Error");
+            $error_template->param(error_body => "Couldn't download @otherfile_parts[-1].<br>Error log:<br><textarea cols=\"100\">$stderr</textarea>");
+            print "Content-type: text/html\n\n", $error_template->output;
+        }
+        else
+        {
+            print "Content-Type: text/html\n";
+            print "Content-Disposition: attachment; filename=\"$download_filename\"\n\n";
+            print $stdout;
+        }
+	}
+	elsif($scantype eq "win_agentless" || $scantype eq "win_share")
+	{
+        my $path = $file;
+        $path =~ s/smb://;
+        $path =~ s~^(//[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[^/]+)/~~;
+        my $servicename = $1;
+        
+        $ip =~ m/([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/;
+        my $extract_ip = $1;
+        
+        my @file_parts = split("/", $file);
+        my $download_filename = $extract_ip . "-" . @file_parts[-1];
+        
+        my ($stdout, $stderr) = capture {
+            system ("smbclient '$servicename' -U $username\%$password -e -E -c \"get \\\"$path\\\" /dev/fd/1\"");
+        };
+        
+        if(length($stdout) == 0 && $stderr =~ m/NT_STATUS_*/)
+        {
+            my $error_template = HTML::Template->new(filename => 'test4_error.tmpl');
+            $error_template->param(error_title => "SMB3 File Download Error");
+            $error_template->param(error_body => "Couldn't download @otherfile_parts[-1].<br>Error log:<br><textarea cols=\"100\">$stderr</textarea>");
+            print "Content-type: text/html\n\n", $error_template->output;
+        }
+        else
+        {
+            print "Content-Type: text/html\n";
+            print "Content-Disposition: attachment; filename=\"$download_filename\"\n\n";
+            print $stdout;
+        }
+	}
+	else
+	{
+        my $error_template = HTML::Template->new(filename => 'test4_error.tmpl');
+        $error_template->param(error_title => "SMB3 Not yet Implemented");
+        $error_template->param(error_body => "<h2>TODO: not implemented for $scantype...</h2>");
+        print "Content-type: text/html\n\n", $error_template->output;
+	}
+}

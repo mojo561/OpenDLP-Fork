@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+      <meta name="description" content="OpenDLP <!-- TMPL_VAR NAME=opendlpversion -->">
+      <meta name="author" content="JNR">
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+      <script src=scripts/actions.js></script>
+   </head>
+   <body>
+<!--    NAV     -->
+<TMPL_INCLUDE NAME="./test_includeme.tmpl">
+<!--    //NAV   -->
+
+
+               <main role="main" class="mr-5 ml-md-5 mb-5 pt-5 mt-3">
+               <h2>View Results</h2><br>
+               On this screen, you can:
+               <ul>
+               <li>Select a scan to view its systems and results</li>
+               <li>Pause, Resume, or Stop/Uninstall agents on all systems in scan</li>
+               </ul>
+               <p>For a more granular way to control agents, select the scan and click "View Scan Details".</p>
+         
+               <form method=GET action=viewresults.html>
+<TMPL_LOOP NAME=table_list>
+                  <div class="w-75">
+                  <table class="table table-bordered table-dark table-sm">
+                  <thead>
+                     <tr>
+                        <th>Details</th>
+                        <th>Scan name</th>
+                        <th>Scan type</th>
+                        <th>Finished</th>
+                        <th>Running</th>
+                        <th>Paused</th>
+                        <th>Uninstalled</th>
+                        <th>Total</th>
+                        <th>Pause</th>
+                        <th>Resume</th>
+                        <th><!-- TMPL_VAR NAME=scanstop_flavortext --></th>
+                     </tr>
+                   </thead>
+                   <tbody>
+<TMPL_LOOP NAME=output_list>
+                     <tr class="table-light text-dark">
+                        <td><input type=radio name=scanname value="<!-- TMPL_VAR NAME=list_scankey -->"></td>
+                        <td><!-- TMPL_VAR NAME=list_scankey --></td>
+                        <td><!--TMPL_VAR NAME=list_scantype --></td>
+                        <td><!--TMPL_VAR NAME=list_numfinished --></td>
+                        <td><!--TMPL_VAR NAME=list_numrunning --></td>
+                        <td><!--TMPL_VAR NAME=list_numstopped --></td>
+                        <td><!--TMPL_VAR NAME=list_numuninstalled --></td>
+                        <td><!--TMPL_VAR NAME=list_total --></td>
+                        <td><!--TMPL_VAR NAME=list_pause --></td>
+                        <td><!--TMPL_VAR NAME=list_resume --></td>
+                        <td><!--TMPL_VAR NAME=list_uninstall --></td>
+                     </tr>
+</TMPL_LOOP>
+                     <tr class="table-light text-dark">
+                        <td>&nbsp;</td>
+                        <td colspan=2>Total</td>
+                        <td><!--TMPL_VAR NAME=list_totalfinished --></td>
+                        <td><!--TMPL_VAR NAME=list_totalrunning --></td>
+                        <td><!--TMPL_VAR NAME=list_totalpaused --></td>
+                        <td><!--TMPL_VAR NAME=list_totaluninstalled --></td>
+                        <td><!--TMPL_VAR NAME=list_totaltotal --></td>
+                        <td colspan=3>&nbsp;</td>
+                     </tr>
+                     <tr class="table-light">
+                        <!--<td colspan=11><input type=submit value="View Scan Details"></td>-->
+                        <td colspan=11><button type="submit" class="btn btn btn-primary btn-md">View Scan Details</button></td>
+                     </tr>
+                  </tbody>
+                  </table>
+                  </div>
+</TMPL_LOOP>
+               </form>
+               </main>
+
+
+   <!-- Bootstrap core JavaScript
+   ================================================== -->
+   <!-- Placed at the end of the document so the pages load faster -->
+   <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+   <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery-slim.min.js"><\/script>')</script>
+   <script src="scripts/popper.min.js"></script>
+   <script src="scripts/bootstrap.min.js"></script>
+   </body>
+</html>

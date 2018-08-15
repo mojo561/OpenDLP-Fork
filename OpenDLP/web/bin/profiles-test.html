@@ -1,0 +1,1220 @@
+#!/usr/bin/perl
+
+# Copyright Andrew Gavin 2009-2012
+# Modifications by Charles Smith, N2 Net Security,Inc. 2011-2012
+# More modifications by Josh, 2018.07.05
+#
+# This file is part of OpenDLP.
+#
+# OpenDLP is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# OpenDLP is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with OpenDLP.  If not, see <http://www.gnu.org/licenses/>.
+
+
+use CGI qw/:standard/;
+use DBI;
+use HTML::Template;
+
+my $view_template = HTML::Template->new(filename => "profiles_view.tmpl");
+$view_template->param(opendlpversion => get_version());
+#my $version = get_version();
+
+my $db_admin_file = "../etc/db_admin";
+my( $db_username, $db_password ) = "";
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+($db_username, $db_password) = split( ":", $db_line );
+
+my $query = CGI->new;
+my $old_profile = $query->param('edit');
+
+my( $old_username, $old_password, $old_domain, $old_exts, $old_ignore_exts, $old_dirs, $old_ignore_dirs ) = "";
+my( $old_regex, $old_path, $old_phonehomeurl, $old_phonehomeuser, $old_phonehomepass, $old_delaytime ) = "";
+my( $old_description, $old_debug, $old_concurrent, $old_creditcards, $old_zipfiles ) = "";
+my( $old_memory, $old_mask ) = "";
+my( $old_ignore_dbs, $old_dbs, $old_ignore_tables, $old_tables, $old_ignore_columns ) = "";
+my $old_scantype = "";
+#my $old_smbhash = "";
+my $old_found = 0;
+my ($old_metahost, $old_metaport, $old_metauser, $old_metapass, $old_metapath, $old_metassl) = "";
+my $old_metalatency = 100;
+#my $old_timeout = 30;
+#########################
+# NEW: Josh - 2018.07.05
+#########################
+my $old_gpgrecipient = "";
+my $old_columns = "";
+my $old_rows = 0;
+my $old_hash = "";
+my $old_metatimeout = 30;
+my $old_email_addr = "";
+
+if( $old_profile ne "" )
+{
+	my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+	my $string = "SELECT * from profiles where profile=?";
+	my $sth = $dbh->prepare( $string );
+	$sth->execute( $old_profile );
+    #########################
+    # NEW: Josh - 2018.05.10
+    #########################
+    $results = $sth->fetchrow_hashref();
+
+    $old_username = $results->{"username"};
+    $old_password = $results->{"password"};
+    $old_domain = $results->{"domain"};
+    $old_exts = $results->{"exts"};
+    $old_ignore_exts = $results->{"ignore_exts"};
+    $old_dirs = $results->{"dirs"};
+    $old_ignore_dirs = $results->{"ignore_dirs"};
+    $old_regex = $results->{"regex"};
+    $old_path = $results->{"path"};
+    $old_phonehomeurl = $results->{"phonehomeurl"};
+    $old_phonehomeuser = $results->{"phonehomeuser"};
+    $old_phonehomepass = $results->{"phonehomepass"};
+    $old_delaytime = $results->{"delaytime"};
+    $old_description = $results->{"description"};
+    $old_debug = $results->{"debug"};
+    $old_concurrent = $results->{"concurrent"};
+    $old_creditcards = $results->{"creditcards"};
+    $old_zipfiles = $results->{"zipfiles"};
+    $old_memory = $results->{"memory"};
+    $old_mask = $results->{"mask"};
+    $old_hash = $results->{"hash"};
+    $old_ignore_dbs = $results->{"ignore_dbs"};
+    $old_dbs = $results->{"dbs"};
+    $old_ignore_tables = $results->{"ignore_tables"};
+    $old_tables = $results->{"tables"};
+    $old_ignore_columns = $results->{"ignore_columns"};
+    $old_columns = $results->{"columns"};
+    $old_rows = $results->{"rows"};
+    $old_scantype = $results->{"scantype"};
+    $old_metaport = $results->{"metaport"};
+    $old_metalatency = $results->{"metalatency"};
+    $old_metauser = $results->{"metauser"};
+    $old_metapass = $results->{"metapass"};
+    $old_metapath = $results->{"metapath"};
+    $old_metatimeout = $results->{"metatimeout"};
+    $old_metassl = $results->{"metassl"};
+    $old_metahost = $results->{"metahost"};
+    $old_email_addr = $results->{"email_addr"};
+    $old_gpgrecipient = $results->{"gpgrecipientname"};
+   
+	$sth->finish;
+	$dbh->disconnect;
+
+    #########################
+    # NEW: Josh - 2018.05.17
+    #########################
+	#if( $$results[0] ne "" )
+	if( $results->{"profile"} ne "")
+	{
+		$old_found = 1;
+	}
+	if($old_rows eq "")
+	{
+        $old_rows = "0";
+    }
+}
+
+#header();
+#print qq {
+#<heading>Create a new scan profile</heading><br><br>
+if($old_found == 0)
+{
+    $view_template->param(mainpage_headertext => "Create a new scan profile");
+}
+else
+{
+    $view_template->param(mainpage_headertext => "Editing \"$old_profile\"");
+}
+#<form method=post action=profiles-new.html name=profile onsubmit="return validate_form(this);">
+#<table class=sample>
+#};
+
+$view_template->param(oldprofile_found => $old_found);
+
+#print "<tr><td width=200>Profile Name <a href=help.html#profile onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td width=500><input name=profilename size=30";
+if( $old_found == 1 )
+{
+	#print " value=\"$old_profile\"";
+	$view_template->param(old_profilename => $old_profile);
+}
+#print "></td></tr>\n";
+
+$view_template->param(oldprofile_found => $old_found);
+
+my @scantype_list = ();
+
+push @scantype_list, {  scantype_optionfulltext => 'value="win_agent"',
+                        scantype_optionselectedtext => ($old_scantype eq "win_agent" ? "selected" : ""),
+                        scantype_optiondisplaytext => "Windows Filesystem (agent)"};
+push @scantype_list, {  scantype_optionfulltext => 'value="meta_agent"',
+                        scantype_optionselectedtext => ($old_scantype eq "meta_agent" ? "selected" : ""),
+                        scantype_optiondisplaytext => "Metasploit (agent) - Meterpreter deployment"};
+push @scantype_list, {  scantype_optionfulltext => 'value="post_agent"',
+                        scantype_optionselectedtext => ($old_scantype eq "post_agent" ? "selected" : ""),
+                        scantype_optiondisplaytext => "Metasploit (agent) - Post Module deployment (for Armitage compatibility)"};
+push @scantype_list, {  scantype_optiondisplaytext => "----------"};
+push @scantype_list, {  scantype_optionfulltext => 'value="win_agentless"',
+                        scantype_optionselectedtext => ($old_scantype eq "win_agentless" ? "selected" : ""),
+                        scantype_optiondisplaytext => "Windows Filesystem (agentless over SMB)"};
+push @scantype_list, {  scantype_optionfulltext => 'value="win_share"',
+                        scantype_optionselectedtext => ($old_scantype eq "win_share" ? "selected" : ""),
+                        scantype_optiondisplaytext => "Windows Network Share (agentless over SMB)"};
+push @scantype_list, {  scantype_optionfulltext => 'value="unix_agentless"',
+                        scantype_optionselectedtext => ($old_scantype eq "unix_agentless" ? "selected" : ""),
+                        scantype_optiondisplaytext => "UNIX Filesystem (agentless over SSH)"};
+push @scantype_list, {  scantype_optiondisplaytext => "----------"};
+push @scantype_list, {  scantype_optionfulltext => 'value="mssql_agentless"',
+                        scantype_optionselectedtext => ($old_scantype eq "mssql_agentless" ? "selected" : ""),
+                        scantype_optiondisplaytext => "Microsoft SQL Server (agentless)"};
+push @scantype_list, {  scantype_optionfulltext => 'value="mysql_agentless"',
+                        scantype_optionselectedtext => ($old_scantype eq "mysql_agentless" ? "selected" : ""),
+                        scantype_optiondisplaytext => "MySQL (agentless)"};
+$view_template->param(scantype_list => \@scantype_list);
+
+#if( $old_found == 0 )
+#{
+#    #########################
+#    #new: Josh - May 17 2018
+#    #########################
+#	print "<tr><td>Scan Type <a href=help.html#scantype onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td><select name=scantype onchange=\"changeList(this,$old_found)\"><option></option>\n";
+#	
+#	print "<option value=win_agent>Windows Filesystem (agent)</option>\n";
+#  print "<option value=meta_agent>Metasploit (agent) - Meterpreter deployment</option>\n";
+#  print "<option value=post_agent>Metasploit (agent) - Post Module deployment (for Armitage compatibility)</option>\n";
+#	print "<option>----------</option>\n";
+#	print "<option value=win_agentless>Windows Filesystem (agentless over SMB)</option>\n";
+#	print "<option value=win_share>Windows Network Share (agentless over SMB)</option>\n";
+#	print "<option value=unix_agentless>UNIX Filesystem (agentless over SSH)</option>\n";
+#	print "<option>----------</option>\n";
+#	print "<option value=mssql_agentless>Microsoft SQL Server (agentless)</option>\n";
+#	print "<option value=mysql_agentless>MySQL (agentless)</option>\n";
+#}
+#else
+#{
+    #########################
+    #new: Josh - May 17 2018
+    #########################
+#	print "<tr><td>Scan Type <a href=help.html#scantype onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td><select name=scantype onchange=\"changeList(this,$old_found)\"><option></option>\n";
+
+#	print "<option value=win_agent";
+#	if( $old_scantype eq "win_agent" ) { print " selected"; }
+#	print ">Windows Filesystem (agent)</option>\n";
+
+#	print "<option value=meta_agent";
+#	if ($old_scantype eq "meta_agent" ) { print " selected"; }
+#	print ">Metasploit (agent) - Meterpreter deployment</option>\n";
+
+#  print "<option value=post_agent";
+#  if ($old_scantype eq "post_agent") { print " selected"; }
+#  print ">Metasploit (agent) - Post Module deployment (for Armitage compatibility)</option>\n";
+
+#	print "<option>----------</option>\n";
+
+#	print "<option value=win_agentless";
+#	if( $old_scantype eq "win_agentless" ) { print " selected"; }
+#	print ">Windows Filesystem (agentless over SMB)</option>\n";
+
+#	print "<option value=win_share";
+#	if( $old_scantype eq "win_share" ) { print " selected"; }
+#	print ">Windows Network Share (agentless over SMB)</option>\n";
+
+#	print "<option value=unix_agentless";
+#	if( $old_scantype eq "unix_agentless" ) { print " selected"; }
+#	print ">UNIX Filesystem (agentless over SSH)</option>\n";
+
+#	print "<option>----------</option>\n";
+
+#	print "<option value=mssql_agentless";
+#	if( $old_scantype eq "mssql_agentless" ) { print " selected"; }
+#	print ">Microsoft SQL Server (agentless)</option>\n";
+
+#	print "<option value=mysql_agentless";
+#	if( $old_scantype eq "mysql_agentless" ) { print " selected"; }
+#	print ">MySQL (agentless)</option>\n";
+#}
+
+#print "</select></td></tr>\n";
+
+#print "<tr><td>Mask Sensitive Data? <a href=help.html#mask onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td><input name=mask type=checkbox value=1 ";
+if( $old_found == 1 )
+{
+	if( $old_mask == 1 )
+	{
+		$view_template->param(old_maskcheckedtext => "checked");
+	}
+}
+else
+{
+	$view_template->param(old_maskcheckedtext => "checked");
+}
+#print "></td></tr>\n";
+
+#########################
+# NEW: Josh - 2018.06.04
+#########################
+#print "<tr><td>Email notifications</td>\n";
+if( $old_found == 1 && $old_email_addr ne "" )
+{
+#    print "<td><input name=email_check type=checkbox id=email_checkbox value=email_checkbox onchange=\"changeList(this,$old_found)\" checked>\n";
+#    print "<div id=email_area style=display:>\n";
+    $view_template->param(old_emailcheckedtext => "checked");
+}
+else
+{
+#    print "<td><input name=email_check type=checkbox id=email_checkbox value=email_checkbox onchange=\"changeList(this,$old_found)\">";
+#    print "<div id=email_area style=display:none>\n";
+    $view_template->param(email_styledisplayvalue => "none");
+}
+#print "Enter email addresses here (seperated by commas):<br />";
+#print "<textarea rows=4 cols=50 name=email_value>";
+#print $old_email_addr;
+$view_template->param(old_emailaddresstext => $old_email_addr);
+#print "</textarea></div></td>";
+#print "</tr>";
+#########################
+
+#print "</table>\n";
+
+#print "<div id=os_credentials>\n";
+#print "<table class=sample>\n";
+# username
+#print "<tr><td width=200>Username <a href=help.html#username onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td width=500><input name=username size=30";
+if( $old_found == 1 )
+{
+	#print " value=\"$old_username\"";
+	$view_template->param(old_usernamevalue => $old_username);
+}
+#print "></td></tr>\n";
+
+# password
+#if( $old_found != 1 )
+#{
+#	print "<tr><td>Password <a href=help.html#password onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td><input name=password type=password size=30></td></tr>\n";
+#}
+#else
+#{
+#	print "<tr><td>Password</td><td><input name=password type=password size=30 value=\"$old_password\"></td></tr>\n";
+#}
+
+#print "<tr><td>GPG Recipient Name </td><td><input name=gpgrecipientname size=30></td></tr>";
+$view_template->param(old_gpgrecipientname => $old_gpgrecipient);
+#print "<tr><td>GPG Passphrase </td><td><input name=gpgpassphrase type=password size=30></td></tr>";
+#print "</table></div>\n";
+
+#print "<div id=domain>\n";
+#print "<table class=sample>\n";
+# domain
+#print "<tr><td width=200>Windows Domain/Workgroup <a href=help.html#domain onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(For Windows OS scans (except Windows Share scans): Required.<br>For MSSQL DB scans:<li>Specify if you are using OS account</li><li>Leave blank if using DB account</li></small></td><td width=500><input name=domain size=30";
+if( $old_found == 1 )
+{
+	#print " value=\"$old_domain\"";
+	$view_template->param(old_domainvalue => $old_domain);
+}
+#print "></td></tr>\n";
+#print "</table></div>\n";
+
+#print "<div id=db_options>\n";
+#print "<table class=sample>\n";
+
+# databases
+$view_template->param(old_scanalldbchecked => ($old_ignore_dbs eq "everything" ? "checked" : ""));
+if($old_ignore_dbs eq "ignore" || ($old_ignore_dbs eq "" && $old_found == 0))
+{
+    $view_template->param(old_scanalldbexceptionschecked => "checked");
+}
+$view_template->param(old_scanalldbinclusivechecked => ($old_ignore_dbs eq "allow" ? "checked" : ""));
+
+if( $old_found == 0 )
+{
+#	print "<tr><td width=200>Databases <a href=help.html#databases onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the database names in this list)</small></td><td width=500>\n";
+#	print '<input type=radio name=db_choice value=everything onclick="document.profile.databases.disabled=true">Scan all databases<br>' . "\n";
+#	print '<input type=radio name=db_choice value=ignore checked onclick="document.profile.databases.disabled=false">Scan all databases except these<br>' . "\n";
+#	print '<input type=radio name=db_choice value=allow onclick="document.profile.databases.disabled=false">Only scan the following databases<br>' . "\n";
+#	print "<textarea name=databases rows=10 cols=60>master\n";
+#	print "tempdb\n";
+#	print "model\n";
+#	print "msdb\n";
+#	print "pubs\n";
+#	print "Northwind";
+#	print "</textarea>\n";
+#	print "</td></tr>\n";
+}
+else
+{
+#	print "<tr><td width=200>Databases <a href=help.html#databases onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the database names in this list)</small></td><td width=500>\n";
+#	print '<input type=radio name=db_choice value=everything onclick="document.profile.databases.disabled=true"';
+#	if( $old_ignore_dbs eq "everything" ) { print " checked"; }
+#	print ">Scan all databases<br>\n";
+#	print '<input type=radio name=db_choice value=ignore onclick="document.profile.databases.disabled=false"';
+#	if( $old_ignore_dbs eq "ignore" ) { print " checked"; }
+#	print ">Scan all databases except these<br>\n";
+#	print '<input type=radio name=db_choice value=allow onclick="document.profile.databases.disabled=false"';
+#	if( $old_ignore_dbs eq "allow" ) { print " checked"; }
+#	print ">Only scan the following databases<br>\n";
+#	print "<textarea name=databases rows=10 cols=60>$old_dbs</textarea><br></td></tr>\n";
+    $view_template->param(database_list => $old_dbs);
+}
+
+# tables
+$view_template->param(old_scanalltableschecked => ($old_ignore_tables eq "everything" ? "checked" : ""));
+if($old_ignore_tables eq "ignore" || ($old_ignore_tables eq "" && $old_found == 0))
+{
+    $view_template->param(old_scanalltablesexceptionschecked => "checked");
+}
+$view_template->param(old_scanalltablesinclusivechecked => ($old_ignore_tables eq "allow" ? "checked" : ""));
+if( $old_found == 0 )
+{
+#	print "<tr><td width=200>Tables <a href=help.html#tables onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the table names in this list)</small></td><td width=500>\n";
+#	print '<input type=radio name=table_choice value=everything onclick="document.profile.tables.disabled=true">Scan all tables<br>' . "\n";
+#	print '<input type=radio name=table_choice value=ignore checked onclick="document.profile.tables.disabled=false">Scan all tables except these<br>' . "\n";
+#	print '<input type=radio name=table_choice value=allow onclick="document.profile.tables.disabled=false">Only scan the following tables<br>' . "\n";
+#	print "<textarea name=tables rows=10 cols=60>syssegments\n";
+#	print "sysconstraints\n";
+#	print "dtproperties";
+#	print "</textarea>\n";
+#	print "</td></tr>\n";
+}
+else
+{
+#	print "<tr><td width=200>Tables <a href=help.html#tables onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the table names in this list)</small></td><td width=500>\n";
+#	print '<input type=radio name=table_choice value=everything onclick="document.profile.tables.disabled=true"';
+#	if( $old_ignore_tables eq "everything" ) { print " checked"; }
+#	print ">Scan all tables<br>\n";
+#	print '<input type=radio name=table_choice value=ignore onclick="document.profile.tables.disabled=false"';
+#	if( $old_ignore_tables eq "ignore" ) { print " checked"; }
+#	print ">Scan all tables except these<br>\n";
+#	print '<input type=radio name=table_choice value=allow onclick="document.profile.tables.disabled=false"';
+#	if( $old_ignore_tables eq "allow" ) { print " checked"; }
+#	print ">Only scan the following tables<br>\n";
+#	print "<textarea name=tables rows=10 cols=60>$old_tables</textarea><br></td></tr>\n";
+    $view_template->param(dbtable_list => $old_tables);
+}
+
+# columns
+$view_template->param(old_scanallcolsexceptionschecked => ($old_ignore_columns eq "ignore" ? "checked" : ""));
+if($old_ignore_columns eq "everything" || ($old_ignore_columns eq "" && $old_found == 0))
+{
+    $view_template->param(old_scanallcolschecked => "checked");
+    $view_template->param(dbcol_disablevaluetext => "disabled");
+}
+$view_template->param(old_scanallcolsinclusivechecked => ($old_ignore_columns eq "allow" ? "checked" : ""));
+if( $old_found == 0 )
+{
+#	print "<tr><td width=200>Columns <a href=help.html#columns onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the column names in this list)</small></td><td width=500>\n";
+#	print '<input type=radio name=column_choice value=everything checked onclick="document.profile.columns.disabled=true">Scan all columns<br>' . "\n";
+#	print '<input type=radio name=column_choice value=ignore onclick="document.profile.columns.disabled=false">Scan all columns except these<br>' . "\n";
+#	print '<input type=radio name=column_choice value=allow onclick="document.profile.columns.disabled=false">Only scan the following columns<br>' . "\n";
+#	print "<textarea name=columns rows=10 cols=60 disabled></textarea>\n";
+#	print "</td></tr>\n";
+}
+else
+{
+#	print "<tr><td width=200>Columns <a href=help.html#columns onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the column names in this list)</small></td><td width=500>\n";
+#	print '<input type=radio name=column_choice value=everything onclick="document.profile.columns.disabled=true"';
+#	if( $old_ignore_columns eq "everything" ) { print " checked"; }
+#	print ">Scan all columns<br>\n";
+#	print '<input type=radio name=column_choice value=ignore onclick="document.profile.columns.disabled=false"';
+#	if( $old_ignore_columns eq "ignore" ) { print " checked"; }
+#	print ">Scan all columns except these<br>\n";
+#	print '<input type=radio name=column_choice value=allow onclick="document.profile.columns.disabled=false"';
+#	if( $old_ignore_columns eq "allow" ) { print " checked"; }
+#	print ">Only scan the following columns<br>\n";
+#	print "<textarea name=columns rows=10 cols=60>$old_columns</textarea><br></td></tr>\n";
+    $view_template->param(dbcol_list => $old_columns);
+}
+
+if( $old_found == 0 )
+{
+	#print "<tr><td>Limit columns to X rows <a href=help.html#rows onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Use \"0\" to get all rows)</small></td><td><input name=rows width=30 value=1000></td></tr>\n";
+	$view_template->param(scanrowsvalue => 1000);
+}
+else
+{
+	#print "<tr><td>Limit columns to X rows <a href=help.html#rows onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Use \"0\" to get all rows)</small></td><td><input name=rows width=30 value=$old_rows></td></tr>\n";
+	$view_template->param(scanrowsvalue => $old_rows);
+}
+
+
+#print "</table>\n";
+#print "<!-- end of MSSQL div //-->\n\n";
+#print "</div>\n";
+######################
+# End of MSSQL <div> #
+######################
+
+
+#print "<div id=meta_agent_options>\n";
+#print "<table class=sample>\n";
+
+#print "<tr><td width=200>Metasploit Host <a href=help.html#metahost onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>IP of running Metasploit console.</small></td><td width=500><input name=metahost size=30";
+if( $old_found == 1 )
+{
+    #print " value=\"$old_metahost\"";
+    $view_template->param(old_metahostvalue => $old_metahost);
+}
+#print ">&nbsp;&nbsp;&nbsp; <input name=metassl type=checkbox value=1 ";
+if ($old_found == 1 && $old_metassl)
+{
+    #print "checked";
+    $view_template->param(old_metausessslchecked => "checked");
+}
+#print ">Use SSL?</td></tr>\n";
+
+#print "<tr><td width=200>Metasploit Port <a href=help.html#metaport onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>Port of running Metasploit console.</small></td><td width=500><input name=metaport size=30";
+if( $old_found == 1 )
+{
+    #print " value=\"$old_metaport\"";
+    $view_template->param(metaportvalue => $old_metaport);
+}
+else
+{
+    #print " value=\"55552\"";
+    $view_template->param(metaportvalue => 55552);
+}
+#print "></td></tr>\n";
+
+#print "<tr><td width=200>Metasploit User <a href=help.html#metauser onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>xmlrpc username.</small></td><td width=500><input name=metauser size=30";
+if( $old_found == 1 )
+{
+    #print " value=\"$old_metauser\"" ;
+    $view_template->param(metauservalue => $old_metauser);
+}
+else
+{
+    #print " value=\"msf\"";
+    $view_template->param(metauservalue => "msf");
+}
+#print "></td></tr>\n";
+
+#print "<tr><td width=200>Metasploit Password <a href=help.html#metapass onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>xmlrpc password.</small></td><td width=500><input name=metapass size=30";
+#if( $old_found == 1 ) {
+#  print " value=\"$old_metapass\"" ;
+#}
+#print " type=password></td></tr>\n";
+
+#print "<tr><td width=200>Path to OpenDLP files <a href=help.html#metapath onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a>";
+#print "<br><small>Location on Metasploit system</small></td><td width=500><input name=metapath size=40 value=\"";
+if ($old_found == 1)
+{
+    #print "$old_metapath";
+    $view_template->param(metapath => $old_metapath);
+}
+else
+{
+    #print 'C:\OpenDLP\bin';
+    $view_template->param(metapath => 'C:\OpenDLP\bin');
+}
+#print "\"></td></tr>\n";
+
+#print "<tr><td width=200>Metasploit Latency (ms) <a href=help.html#metalatency onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a>";
+#print "<br><small>Leave alone unless CPU usage high</small></td><td width=500><input name=metalatency size=30 value=\"";
+if ($old_found == 1)
+{
+    #print "$old_metalatency";
+    $view_template->param(metalatency => $old_metalatency);
+}
+else
+{
+    #print "100";
+    $view_template->param(metalatency => "100");
+}
+#print "\"></td></tr>\n";
+
+#print "<tr><td width=200>Metasploit Timeout (s) <a href=help.html#metatimeout onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a>";
+#print "<br><small>Time to wait for response before giving up</small></td><td width=500><input name=metatimeout size=30 value=\"";
+if ($old_found == 1)
+{
+    #print "$old_metatimeout";
+    $view_template->param(metatimeoutvalue => $old_metatimeout);
+}
+else
+{
+    #print "30";
+    $view_template->param(metatimeoutvalue => "30");
+}
+#print "\"></td></tr>\n";
+
+
+#print "</table></div>\n";
+#print "<!-- end of meta_agent_options //-->\n";
+
+
+#print "<div id=smbhash>\n";
+#print "<table class=sample>\n";
+#print "<tr><td width=200>SMBHash <a href=help.html#smbhash onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td width=500><input name=smbhash size=65";
+if( $old_found == 1 )
+{
+    #print " value=\"$old_hash\"";
+    $view_template->param(old_smbhashvalue => $old_hash);
+}
+#print "></td></tr>\n";
+#print "</table>\n";
+#print "<!-- end of SMBhash div //-->\n\n";
+#print "</div>\n";
+
+#print "<div id=win_agent_options>\n";
+#print "<table class=sample>\n";
+
+#########################
+#new: Josh - 2018.05.25
+#########################
+#print "<tr><td width=200>Installation Path <a href=help.html#install_path onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Must be new directory. Be aware temporary files may be readable by other users.)</small></td><td width=500>\n";
+#print "<select name=\"path\">\n";
+
+#my $tmpstr = "<option value=\"C:\\Program Files\\OpenDLP\" %s>C:\\Program Files\\OpenDLP</option>\n";
+#print ( $old_found != 0 && $old_path =~ m/Program Files/ ? sprintf($tmpstr, "selected") : sprintf($tmpstr, "") );
+
+#$tmpstr = "<option value=\"C:\\Program Files (x86)\\OpenDLP\" %s>C:\\Program Files (x86)\\OpenDLP</option>\n";
+#print ( $old_found != 0 && $old_path =~ m/Program Files \(x86\)/ ? sprintf($tmpstr, "selected") : sprintf($tmpstr, "") );
+
+#print "</select>\n";
+
+#print "</td>\n</tr>\n";
+
+# TODO get this from a database table instead
+my @agentpaths_list = ();
+push @agentpaths_list, {    agentpath => 'C:\Program Files\OpenDLP',
+                            agentpath_selectedvaluetext => ($old_path =~ m/Program Files/ ? "selected" : "")};
+push @agentpaths_list, {    agentpath => 'C:\Program Files (x86)\OpenDLP',
+                            agentpath_selectedvaluetext => ($old_path =~ m/Program Files \(x86\)/ ? "selected" : "")};
+$view_template->param(agentpaths_list => \@agentpaths_list);
+#if( $old_found == 0 )
+#{
+#	print "<tr><td width=200>Installation Path <a href=help.html#install_path onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Must be new directory. Be aware temporary files may be readable by other users.)</small></td><td width=500><input name=path size=30 value=\"c:\\Program Files\\OpenDLP\"></td></tr>\n";
+#}
+#else
+#{
+#	print "<tr><td width=200>Installation Path <a href=help.html#install_path onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Must be new directory)</small></td><td width=500><input name=path size=30 value=\"$old_path\"></td></tr>\n";
+#}
+
+#print "</table></div>\n";
+#print "<!-- end of win_agent_options //-->\n";
+
+my @memlim_list = ();
+#adapted from original code
+my @percents = ( .01, .02, .05, .1, .15, .2, .25 );
+foreach my $percent( @percents )
+{
+    my %memlim_element = (  memlimoptionval => $percent,
+                            memlim_selectedvaluetext => ($old_memory == $percent || ($old_found == 0 && $percent == 0.1) ? "selected" : ""),
+                            memlimoptiontext => $percent * 100 . '%');
+    push @memlim_list, \%memlim_element;
+}
+$view_template->param(memlim_list => \@memlim_list);
+#print "<div id=memory>\n";
+#print "<table class=sample>\n";
+#if( $old_found == 0 )
+#{
+#	print qq {
+#	<tr><td width=200>Memory Limit <a href=help.html#memory onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(as percent of target system's total RAM)</small></td>
+#	<td width=500><select name=memory>
+#	<option value=".01">1%</option>
+#	<option value=".02">2%</option>
+#	<option value=".05">5%</option>
+#	<option value=".1" selected>10%</option>
+#	<option value=".15">15%</option>
+#	<option value=".2">20%</option>
+#	<option value=".25">25%</option>
+#	</select></td></tr>
+#	};
+#}
+#else
+#{
+#	print "<tr><td width=200>Memory Limit <a href=help.html#memory onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(as percent of target system's total RAM)</small></td>\n";
+#	print "<td width=500><select name=memory>\n";
+#	my @percents = ( .01, .02, .05, .1, .15, .2, .25 );
+#	foreach my $percent( @percents )
+#	{
+#		print "<option value=\"$percent\"";
+#		if( $old_memory == $percent )
+#		{
+#			print " selected";
+#		}
+#		print ">" . $percent * 100 . "%</option>\n";
+#	}
+#	print "</select></td></tr>\n";
+#}
+#print "</table></div>\n";
+#print "<!-- end of memory div //-->\n";
+
+#print "<div id=win_agent_options_3>\n";
+#print "<table class=sample>\n";
+#print qq {
+#<tr><td width=200>Directories <a href=help.html#directories onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the file extensions in this list)</small></td><td width=500>
+#};
+
+$view_template->param(old_scanwinagentalldirschecked => ($old_ignore_dirs eq "everything" ? "checked" : ""));
+if($old_ignore_dirs eq "ignore" || ($old_ignore_dirs eq "" && $old_found == 0))
+{
+    $view_template->param(old_scanwinagentexceptionsdirschecked => "checked");
+}
+$view_template->param(old_scanwinagentinclusivedirschecked => ($old_ignore_dirs eq "allow" ? "checked" : ""));
+if( $old_found == 0 )
+{
+#	print qq {
+#<input type=radio name=dir_choice value=everything onclick="document.profile.directories.disabled=true">Scan all directories<br>
+#<input type=radio name=dir_choice value=ignore checked onclick="document.profile.directories.disabled=false">Scan all directories except these (recursive)<br>
+#<input type=radio name=dir_choice value=allow onclick="document.profile.directories.disabled=false">Only scan the following directories (recursive)<br>
+#<textarea name=directories rows=10 cols=60>c:\\windows
+#c:\\winnt
+#c:\\System Volume Information
+#%OPENDLP%</textarea><br>
+#</td></tr>};
+    #$view_template->param(winagentpath_list => "c:\\windows\nc:\\winnt\nc:\\System Volume Information\n%OPENDLP%");
+    #$old_dirs = "c:\\windows\n";
+    #$old_dirs .= "c:\\winnt\n";
+    #$old_dirs .= "c:\\System Volume Information\n";
+}
+else
+{
+#	print '<input type=radio name=dir_choice value=everything onclick="document.profile.directories.disabled=true"';
+#	if( $old_ignore_dirs eq "everything" ) { print " checked"; }
+#	print ">Scan all directories<br>\n";
+#	print '<input type=radio name=dir_choice value=ignore onclick="document.profile.directories.disabled=false"';
+#	if( $old_ignore_dirs eq "ignore" ) { print " checked"; }
+#	print ">Scan all directories except these (recursive)<br>\n";
+#	print '<input type=radio name=dir_choice value=allow onclick="document.profile.directories.disabled=false"';
+#	if( $old_ignore_dirs eq "allow" ) { print " checked"; }
+#	print ">Only scan the following directories (recursive)<br>\n";
+#	print "<textarea name=directories rows=10 cols=60>$old_dirs</textarea><br></td></tr>\n";
+    $view_template->param(winagentpath_list => $old_dirs);
+}
+
+#print "<tr><td>File Extensions <a href=help.html#extensions onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the file extensions in this list)</small></td><td>\n";
+$view_template->param(old_scanwinagentallfileschecked => ($old_ignore_exts eq "everything" ? "checked" : ""));
+if($old_ignore_exts eq "ignore" || ($old_ignore_exts eq "" && $old_found == 0))
+{
+    $view_template->param(old_scanwinagentexceptionsfileschecked => "checked");
+}
+$view_template->param(old_scanwinagentinclusivefileschecked => ($old_ignore_exts eq "allow" ? "checked" : ""));
+if( $old_found == 0 )
+{
+#print qq {
+#<input type=radio name=ext_choice value=everything onclick="document.profile.extensions.disabled=true">Scan all files<br>
+#<input type=radio name=ext_choice value=ignore checked onclick="document.profile.extensions.disabled=false">Scan all files except files with the following extensions<br>
+#<input type=radio name=ext_choice value=allow onclick="document.profile.extensions.disabled=false">Only scan files with the following file extensions<br>
+#<textarea name=extensions rows=10 cols=60>323
+#386
+#3g2
+#3gp
+#3gp2
+#3gpp
+#7z
+#aac
+#aca
+#ace
+#aif
+#aifc
+#aiff
+#al
+#amc
+#ani
+#arj
+#asx
+#au
+#au3
+#avi
+#bmp
+#bz
+#bz2
+#cab
+#caf
+#cda
+#cdda
+#cdf
+#cdx
+#cgi
+#chm
+#chr
+#cmf
+#cnv
+#cod
+#com
+#ctx
+#datasource
+#del
+#dep
+#dev
+#devp
+#dib
+#dl_
+#dll
+#dmg
+#don
+#dpbcc
+#drv
+#dsp
+#elm
+#exe
+#flt
+#fon
+#frm
+#gen
+#gif
+#gz
+#hiv
+#hlp
+#hpp
+#hxs
+#hxx
+#ico
+#idl
+#inf
+#ink
+#inl
+#ism
+#iso
+#jfif
+#jpe
+#jpeg
+#jpg
+#ldf
+#lex
+#lib
+#lic
+#lng
+#lnk
+#lxa
+#m3u
+#mdi
+#mib
+#mid
+#miv
+#mk
+#mmp
+#mov
+#mp2
+#mp2v
+#mp3
+#mp4
+#mpampe
+#mpeg
+#mpegmpv2maw
+#mpg
+#mpq
+#msi
+#msp
+#ncb
+#nlb
+#nls
+#nrg
+#o
+#obj
+#ocx
+#otf
+#p
+#pch
+#pct
+#pf
+#pfm
+#pic
+#pict
+#pll
+#pm
+#pnf
+#png
+#pnt
+#pntg
+#ppi
+#psp
+#pst
+#pyc
+#pyo
+#pywqpa
+#qt
+#qti
+#qtif
+#qtl
+#rar
+#rb
+#rbw
+#rc
+#rc2
+#rco
+#rdd
+#rmi
+#rnd
+#s
+#scr
+#sd2
+#sst
+#sy_
+#sys
+#tar
+#tgz
+#tif
+#tiff
+#tlb
+#tmf
+#ttf
+#url
+#uu
+#vmss
+#vmdk
+#vmem
+#vxd
+#wav
+#wax
+#wma
+#wmf
+#wmv
+#wpc
+#wpl</textarea><br>
+#</td></tr>};
+    if( open(my $defaultfileexts, '<', "default_filetypes.tmpl") )
+    {
+        while(my $row = <$defaultfileexts>)
+        {
+            chomp $row;
+            $old_exts .= "$row\n";
+        }
+        $old_exts =~ s/\n$//;
+    }
+    else
+    {
+        warn "Couldn't open default_filetypes.tmpl. $!";
+    }
+    #$view_template->param(winagentfileext_list => $old_exts);
+}
+#else
+#{
+#	print '<input type=radio name=ext_choice value=everything onclick="document.profile.extensions.disabled=true"';
+#	if( $old_ignore_exts eq "everything" ) { print " checked"; }
+#	print ">Scan all files<br>\n";
+#	print '<input type=radio name=ext_choice value=ignore onclick="document.profile.extensions.disabled=false"';
+#	if( $old_ignore_exts eq "ignore" ) { print " checked"; }
+#	print ">Scan all files except files with the following extensions<br>\n";
+#	print '<input type=radio name=ext_choice value=allow onclick="document.profile.extensions.disabled=false"';
+#	if( $old_ignore_exts eq "allow" ) { print " checked"; }
+#	print ">Only scan files with the following file extensions<br>\n";
+#
+#	print "<textarea name=extensions rows=10 cols=60>$old_exts";
+#	print "</textarea><br></td></tr>\n";
+    $view_template->param(winagentfileext_list => $old_exts);
+#}
+#print "</table></div>\n";
+#print "<!-- end of windows agent div part 3 // -->\n\n";
+
+#print "<div id=regex>\n";
+#print "<table class=sample>\n";
+#print "<tr><td width=200>Regular Expressions <a href=help.html#regexes onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td>\n";
+#print "<td width=500>";
+
+my @regexpattern_list = ();
+#adapted from old code
+my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+my $string = "select number,name from regexes";
+my $sth = $dbh->prepare( $string );
+$sth->execute();
+while( my $results = $sth->fetchrow_hashref() )
+{
+    my @old_regexes = split( ",", $old_regex );
+    my $check = "";
+    foreach my $re( @old_regexes )
+    {
+        if( $results->{"number"} == $re )
+        {
+            $check = "checked";
+        }
+    }
+    push @regexpattern_list, {  regexpattern_number => $results->{"number"},
+                                regexpattern_checkedvaluetext => $check,
+                                regexpattern_name => $results->{"name"}};
+}
+$sth->finish;
+$dbh->disconnect;
+$view_template->param(regexpattern_list => \@regexpattern_list);
+#if( $old_found == 0 )
+#{
+#	my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+#	my $string = "SELECT number,name,pattern from regexes";
+#	my $sth = $dbh->prepare( $string );
+#	$sth->execute();
+#	while( my $results = $sth->fetchrow_arrayref() )
+#	{
+#		print "<input type=checkbox name=regex_" . $$results[0] . " value=1>$$results[1]<br>\n";
+#	}
+#	$sth->finish;
+#	$dbh->disconnect;
+#}
+#else
+#{
+#	my @old_regexes = split( ",", $old_regex );
+#	my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+#	my $string = "SELECT number,name,pattern from regexes";
+#	my $sth = $dbh->prepare( $string );
+#	$sth->execute();
+#	while( my $results = $sth->fetchrow_arrayref() )
+#	{
+#		print "<input type=checkbox name=regex_" . $$results[0] . " value=1";
+#		foreach my $re( @old_regexes )
+#		{
+#			if( $$results[0] == $re )
+#			{
+#				print " checked";
+#			}
+#		}
+#		print ">$$results[1]<br>\n";
+#	}
+#	$sth->finish;
+#	$dbh->disconnect;
+#}
+#print "</td></tr>\n";
+
+if($old_found == 0)
+{
+    my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+    my $string = "select name from regexes where lower(name) in (?, ?, ?, ?, ?, ?, ?, ?)";
+    my $sth = $dbh->prepare( $string );
+    $sth->execute("mastercard", "visa", "amex", "diners_club_1", "diners_club_2", "discover", "jcb_1", "jcb_2");
+    while(my $results = $sth->fetchrow_hashref())
+    {
+        $old_creditcards .= $results->{"name"} . "\n";
+    }
+    $old_creditcards =~ s/\n$//;
+    $sth->finish;
+    $dbh->disconnect;
+}
+#else
+#{
+    $view_template->param(ccalias_list => $old_creditcards);
+#}
+#if( $old_found == 0 )
+#{
+#print qq {
+#<tr><td>Credit Cards <a href=help.html#ccs onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the names of the regex aliases)</small></td>
+#<td><textarea name=creditcards rows=10 cols=60>Mastercard
+#Visa
+#AMEX
+#Diners_Club_1
+#Diners_Club_2
+#Discover
+#JCB_1
+#JCB_2</textarea></td></tr>
+#};
+#}
+#else
+#{
+#	print "<tr><td>Credit Cards <a href=help.html#ccs onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Newline-delimit the names of the regex aliases)</small></td>\n";
+#	print "<td><textarea name=creditcards rows=10 cols=60>$old_creditcards</textarea></td></tr>\n";
+#}
+#print "</table></div>\n";
+#print "<!-- end of regex div // -->\n\n";
+
+#print "<div id=win_agent_options_2><table class=sample>\n";
+if( $old_found == 0 )
+{
+#print qq {
+#<tr><td width=200>ZIP Extensions <a href=help.html#zips onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a><br><small>(Treat these extensions as ZIP files. Newline-delimit the names of file extensions.)</small></td>
+#<td width=500><textarea name=zipfile rows=10 cols=60>zip
+#jar
+#xlsx
+#docx
+#pptx
+#odt
+#odp
+#ods
+#odg</textarea></td></tr>};
+    $old_zipfiles  = "zip\n";
+    $old_zipfiles .= "jar\n";
+    $old_zipfiles .= "xlsx\n";
+    $old_zipfiles .= "docx\n";
+    $old_zipfiles .= "pptx\n";
+    $old_zipfiles .= "odt\n";
+    $old_zipfiles .= "odp\n";
+    $old_zipfiles .= "ods\n";
+    $old_zipfiles .= "odg";
+}
+#else
+#{
+#	print "<tr><td width=200>ZIP Extensions <a href=help.html#zips onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Treat these extensions as ZIP files. Newline-delimit the names of file extensions.)</small></td>\n";
+#	print "<td width=500><textarea name=zipfile rows=10 cols=60>$old_zipfiles</textarea></td></tr>\n";
+    $view_template->param(zipext_list => $old_zipfiles);
+#}
+
+#print "</table></div>\n";
+#print "<!-- end of win_agent_options_2 div //-->\n";
+
+#print "<div id=win_agent_options_4>\n";
+#print "<table class=sample>\n";
+#print "<tr><td width=200>Upload URL <a href=help.html#upload_url onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(This is the URL on your web server)</small></td>\n";
+
+if( $old_found == 0 )
+{
+	my $results_url = url(-query_string=>1);
+	$results_url =~ s/profiles\.html$/results\/results\.html/; # TODO worky?
+	#print "<td width=500><input name=url size=70 value=\"$results_url\"></td></tr>\n";
+	$view_template->param(old_phonehomeurl => $results_url);
+}
+else
+{
+	#print "<td width=500><input name=url size=70 value=\"$old_phonehomeurl\"></td></tr>\n";
+	$view_template->param(old_phonehomeurl => $old_phonehomeurl);
+}
+
+$view_template->param(old_phonehomeuser => $old_phonehomeuser);
+#if( $old_found == 0 )
+#{
+#	print "<tr><td>Upload URL username <a href=help.html#upload_user onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td><input name=urluser size=30></td></tr>\n";
+#}
+#else
+#{
+#	print "<tr><td>Upload URL username <a href=help.html#upload_user onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td><input name=urluser size=30 value=\"$old_phonehomeuser\"></td></tr>\n";
+#}
+
+#if( $old_found == 0 )
+#{
+#	print "<tr><td>Upload URL password <a href=help.html#upload_pass onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td><input name=urlpass type=password size=30></td></tr>\n";
+#}
+#else
+#{
+#	print "<tr><td>Upload URL password <a href=help.html#upload_pass onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td><input name=urlpass type=password size=30 value=\"$old_phonehomepass\"></td></tr>\n";
+#}
+
+if( $old_found == 0 )
+{
+	#print "<tr><td>Time between uploads <a href=help.html#duration onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td><input name=wait size=30 value=\"300\"></td></tr>\n";
+	$view_template->param(old_delaytime => "300");
+}
+else
+{
+	#print "<tr><td>Time between uploads <a href=help.html#duration onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td><td><input name=wait size=30 value=\"$old_delaytime\"></td></tr>\n";
+	$view_template->param(old_delaytime => $old_delaytime);
+}
+
+$view_template->param(old_description => $old_description);
+#if( $old_found == 0 )
+#{
+#	print "<tr><td>Description <a href=help.html#description onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(will show as Windows Service description)</small></td><td><input name=description size=70></td></tr>\n";
+#}
+#else
+#{
+#	print "<tr><td>Description <a href=help.html#description onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(will show as Windows Service description)</small></td><td><input name=description size=70 value=\"$old_description\"></td></tr>\n";
+#}
+#print "</table>\n";
+if( $old_found == 0 )
+{
+	#print "<input type=hidden name=is_new value=\"1\">\n";
+	$view_template->param(is_new_value => "1");
+}
+else
+{
+	#print "<input type=hidden name=is_new value=\"0\">\n";
+	$view_template->param(is_new_value => "0");
+}
+
+#print qq {
+#</div>
+#<!-- end of win_agent_options_4 div -->
+#
+#<div id=submission>
+#<table class=sample>};
+$view_template->param(old_concurrent => $old_concurrent);
+#if( $old_found == 0 )
+#{
+#	print "<tr><td>Concurrent deployments <a href=help.html#concurrent onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Only for initial deployment, not running)</small></td><td><input name=concurrent size=30></td></tr>\n";
+#}
+#else
+#{
+#	print "<tr><td>Concurrent deployments <a href=help.html#concurrent onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a><br><small>(Only for initial deployment, not running)</small></td><td><input name=concurrent size=30 value=\"$old_concurrent\"></td></tr>\n";
+#}
+
+my @debugopts_list = ();
+push @debugopts_list, { debugopts_value => "0",
+                        debugopts_selectedvaluetext => ($old_debug == 0 ? "selected" : ""),
+                        debugopts_optiontext => "0 - Normal"};
+push @debugopts_list, { debugopts_value => "1",
+                        debugopts_selectedvaluetext => ($old_debug == 1 ? "selected" : ""),
+                        debugopts_optiontext => "1 - More Verbose (Not recommended for large (100+) deployments)"};
+push @debugopts_list, { debugopts_value => "2",
+                        debugopts_selectedvaluetext => ($old_debug == 2 ? "selected" : ""),
+                        debugopts_optiontext => "2 - Extremely Verbose (Not recommended for medium (10+) deployments)"};
+push @debugopts_list, { debugopts_value => "3",
+                        debugopts_selectedvaluetext => ($old_debug == 3 ? "selected" : ""),
+                        debugopts_optiontext => "3 - Intensely Verbose (Not recommended for small (3+) deployments)"};
+$view_template->param(debugopts_list => \@debugopts_list);
+#if( $old_found == 0 )
+#{
+#print qq {
+#<tr><td>Log Verbosity <a href=help.html#logs onclick="return popup(this, 'help')"><img src=images/help.gif border=0></a></td>
+#<td><select name=debug>
+#<option value="0">0 - Normal</option>
+#<option value="1">1 - More Verbose (Not recommended for large (100+) deployments)</option>
+#<option value="2">2 - Extremely Verbose (Not recommended for medium (10+) deployments)</option>
+#<option value="3">3 - Intensely Verbose (Not recommended for small (3+) deployments)</option>
+#</select></td></tr>};
+#}
+#else
+#{
+#	print "<tr><td>Log Verbosity <a href=help.html#logs onclick=\"return popup(this, \'help\')\"><img src=images/help.gif border=0></a></td>\n";
+#	print "<td><select name=debug>\n";
+#	print "<option value=\"0\"";
+#	if( $old_debug == 0 ) { print " selected"; }
+#	print ">0 - Normal</option>\n";
+#	print "<option value=\"1\"";
+#	if( $old_debug == 1 ) { print " selected"; }
+#	print ">1 - More Verbose (Not recommended for large (100+) deployments)</option>\n";
+#	print "<option value=\"2\"";
+#	if( $old_debug == 2 ) { print " selected"; }
+#	print ">2 - Extremely Verbose (Not recommended for medium (20+) deployments)</option>\n";
+#	print "<option value=\"3\"";
+#	if( $old_debug == 3 ) { print " selected"; }
+#	print ">3 - Intensely Verbose (Not recommended for small (3+) deployments)</option>\n";
+#	print "</select></td></tr>\n";
+#}
+
+
+#print qq {
+#<tr><td width=200>Submit</td><td width=500><input type=submit value="Submit"></td></tr></table>
+#</div>
+#</form>
+#};
+#footer();
+print "Content-type: text/html\n\n", $view_template->output;
+
+#sub header
+#{
+#	print "Content-type: text/html\n\n";
+#	print "<!DOCTYPE html>\n<html>\n<head>\n";
+#	print "<title>OpenDLP $version</title>\n";
+#    #########################
+#    #new: Josh - June 10 2018
+#    #########################
+#	print "<link rel=stylesheet type=text/css href=styles/style_a.css>\n";
+#	print "<script src=scripts/profiles.js></script>\n";
+#	print "<script src=scripts/actions.js></script>\n";
+#	
+#	print "</head>\n";
+#	print "<BODY leftmargin=0 topmargin=0 onLoad=\"menu.toggleMe(\'profiles\');changeList(document.profile.scantype,$old_found)\">\n";
+#	#########################
+#	print '<iframe src="sidebar.html" frameborder="0" align="left" width=175 height="100%" name=menu></iframe><table border=0 cellpadding=0 cellspacing=0><tr><td>' . "\n";
+#}
+
+#sub footer
+#{
+#	print "</td></tr></table></body></html>\n";
+#}
+
+sub get_version
+{
+	open( V, "<../etc/version" );
+	my $v = <V>;
+	close( V );
+	chomp $v;
+	return $v;
+}
+

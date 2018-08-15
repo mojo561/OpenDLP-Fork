@@ -1,0 +1,138 @@
+#!/usr/bin/perl
+
+# Copyright Andrew Gavin 2009-2012
+# Modifications by Charles Smith, N2 Net Security,Inc. 2011-2012
+# More modifications by JNR - 2018.08.12
+#
+# This file is part of OpenDLP.
+#
+# OpenDLP is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# OpenDLP is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with OpenDLP.  If not, see <http://www.gnu.org/licenses/>.
+
+
+use CGI qw/:standard/;
+use DBI;
+use HTML::Template;
+use Number::Format 'format_number';
+
+my $view_template = HTML::Template->new(filename => "deletescan_view.tmpl");
+$view_template->param(opendlpversion => get_version());
+
+my $version = get_version();
+my $db_admin_file = "../etc/db_admin";
+my $is_valid = 1;
+#my %systems = ();
+my @tmpl_errorlist = ();
+
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+my ($db_username, $db_password) = split( ":", $db_line );
+my $query = CGI->new;
+my $scanname = $query->param('scanname');
+if( $scanname ne "" && $scanname !~ /^[a-z0-9\ \,\.\-\_]+$/i )
+{
+	$is_valid = 0;
+	push(@tmpl_errorlist, {erroritem => "Invalid scan name"});
+}
+
+my $system = $query->param('system');
+if( $system ne "" && $system !~ /^[A-Z0-9]{32}$/ )
+{
+	$is_valid = 0;
+	push(@tmpl_errorlist, {erroritem => "Invalid system tracker"});
+}
+
+if( $is_valid )
+{
+    my @scanlist = ();
+	my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+	my $string = "SELECT DISTINCT scan,ip,control,scantype FROM systems";
+	my $sth = $dbh->prepare( $string );
+	$sth->execute();
+	while( my $results = $sth->fetchrow_arrayref() )
+	{
+		if( $$results[2] eq "running" )
+		{
+			$scans{$$results[0]}{running}++;
+		}
+		elsif( $$results[2] eq "finished" )
+		{
+			$scans{$$results[0]}{finished}++;
+		}
+		elsif( $$results[2] eq "stopped" )
+		{
+			$scans{$$results[0]}{stopped}++;
+		}
+		elsif( $$results[2] eq "uninstalled" )
+		{
+			$scans{$$results[0]}{uninstalled}++;
+		}
+		$scans{$$results[0]}{scantype} = $$results[3];
+	}
+	foreach my $scankey( sort( keys( %scans )))
+	{
+		my $total = $scans{$scankey}{running} + $scans{$scankey}{finished} + $scans{$scankey}{stopped} + $scans{$scankey}{uninstalled};
+		my $tmpl_finished = "0";
+        my $tmpl_running = "0";
+        my $tmpl_stopped = "0";
+        my $tmpl_uninstalled = "0";
+		my $tr_id = "complete";
+		my $tr_style = "display:table-row;";
+
+        if( $total != ($scans{$scankey}{finished} + $scans{$scankey}{uninstalled} ))
+        {
+            $tr_id = "incomplete";
+            $tr_style = "display:none;";
+        }
+
+        # Finished
+        if( $scans{$scankey}{finished} != 0 )
+        {
+            $tmpl_finished = $scans{$scankey}{finished};
+        }
+
+        # Uninstalled
+        if( $scans{$scankey}{uninstalled} != 0 )
+        {
+            $tmpl_uninstalled = $scans{$scankey}{uninstalled};
+        }
+
+        push(@scanlist, {tr_id => $tr_id,
+                         tr_style => $tr_style,
+                         scankey => $scankey,
+                         scantype => $scans{$scankey}{scantype},
+                         finished => format_number($tmpl_finished),
+                         uninstalled => format_number($tmpl_uninstalled),
+                         total => $total});
+		
+	}
+	$view_template->param(scanlist => \@scanlist);
+}
+else
+{
+    $view_template->param(errorlist => \@tmpl_errorlist);
+}
+
+print "Content-type: text/html\n\n", $view_template->output;
+
+sub get_version
+{
+	open( V, "<../etc/version" );
+	my $v = <V>;
+	close( V );
+	chomp $v;
+	return $v;
+}
+

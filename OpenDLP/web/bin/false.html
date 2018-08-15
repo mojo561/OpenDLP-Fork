@@ -1,0 +1,265 @@
+#!/usr/bin/perl
+
+# Copyright Andrew Gavin 2009-2012
+# Modified by JNR - 2018.08.11
+#
+# This file is part of OpenDLP.
+#
+# OpenDLP is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# OpenDLP is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with OpenDLP.  If not, see <http://www.gnu.org/licenses/>.
+
+
+use CGI qw/:standard/;
+use DBI;
+use HTML::Template;
+
+my $view_template = HTML::Template->new(filename => "false_view.tmpl");
+$view_template->param(opendlpversion => get_version());
+
+my $db_admin_file = "../etc/db_admin";
+my $is_valid = 1;
+#my %systems = ();
+my @tmpl_errorlist = ();
+
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+my ($db_username, $db_password) = split( ":", $db_line );
+my $query = CGI->new;
+
+my $scanname = $query->param('scanname');
+if( $scanname ne "" && $scanname !~ /^[a-z0-9\ \,\.\-\_]+$/i )
+{
+	$is_valid = 0;
+	push(@tmpl_errorlist, {erroritem => "Invalid scan name" });
+}
+
+my $system = $query->param('system');
+if( $system ne "" && $system !~ /^[A-Z0-9]{32}$/ )
+{
+	$is_valid = 0;
+	push(@tmpl_errorlist, {erroritem => "Invalid system tracker" });
+}
+
+if( $is_valid )
+{
+	# if no arguments are given
+	if( $system eq "" && $scanname eq "" )
+	{
+        $view_template->param(useforma => "1");
+		my %scans = ();
+        my @fplist = ();
+
+		my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+		my $string = "SELECT scan,is_false FROM results where is_false = 1";
+		my $sth = $dbh->prepare( $string );
+		$sth->execute();
+		while( my $results = $sth->fetchrow_arrayref() )
+		{
+			$scans{$$results[0]}++;
+		}
+		foreach my $scankey( sort( keys( %scans )))
+		{
+            push(@fplist, { scan => $scankey,
+                            scancount => $scans{$scankey}});
+		}
+		$sth->finish();
+		$dbh->disconnect();
+		$view_template->param(fplist => \@fplist);
+	}
+
+	# if scanname is given as an argument, but not system
+	elsif( $scanname ne "" && $system eq "" )
+	{
+        $view_template->param(useformb => "1");
+        $view_template->param(scanname => $scanname);
+        my @systemlist = ();
+
+		my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+		my $string = "SELECT results.tracker,results.system,systems.ip FROM results,systems WHERE results.is_false = 1 AND results.scan=? AND results.tracker = systems.tracker";
+		my $sth = $dbh->prepare( $string );
+		$sth->execute( $scanname );
+		while( my $results = $sth->fetchrow_arrayref() )
+		{
+			$system{$$results[0]}{system} = $$results[1];
+			$system{$$results[0]}{ip} = $$results[2];
+			$system{$$results[0]}{false}++;
+		}
+
+		foreach my $tracking( sort( keys( %system )))
+		{
+			my $printme_system = $system{$tracking}{system};
+			$printme_system = replacechars( $printme_system );
+			my $printme_ip = $system{$tracking}{ip};
+			$printme_ip = replacechars( $printme_ip );
+			push(@systemlist, { tracking => $tracking,
+                                printme_system => $printme_system,
+                                printme_ip => $printme_ip,
+                                fpcount => $system{$tracking}{false}});
+		}
+		$sth->finish();
+		$dbh->disconnect();
+		$view_template->param(systemlist => \@systemlist);
+	}
+
+	# look at details of specific system
+	elsif( $scanname ne "" && $system ne "" )
+	{
+		my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+		my $string = "SELECT system,ip,scantype from systems where scan=? AND tracker=?";
+		my $sth = $dbh->prepare( $string );
+		$sth->execute( $scanname, $system );
+		my $results = $sth->fetchrow_arrayref();
+		my $hostname = $$results[0];
+		my $ip = $$results[1];
+		my $scantype = $$results[2];
+
+		if( $scantype eq "win_agent" || $scantype eq "win_agentless" || $scantype eq "unix_agentless" || $scantype eq "win_share" )
+		{
+            $view_template->param(useformc => "1");
+            my @fplist = ();
+			if( $hostname ne "" )
+			{
+				$view_template->param(formcheading => "Select a false positive to clear for system $ip ($hostname) in scan \"$scanname\":");
+			}
+			else
+			{
+                $view_template->param(formcheading => "Select a false positive to clear for system $ip in scan \"$scanname\":");
+			}
+
+			my $string = "SELECT type,pattern,file,offset,md5,number FROM results WHERE scan=? AND tracker=? AND is_false = \"1\"";
+			my $sth = $dbh->prepare( $string );
+			$sth->execute( $scanname, $system );
+			my $row_counter = 1;
+
+            $view_template->param(scanname => $scanname);
+            $view_template->param(tmpl_system => $system);
+
+			while( my $results = $sth->fetchrow_arrayref() )
+			{
+				my $type = $$results[0];
+				my $pattern = $$results[1];
+				my $file = $$results[2];
+				my $offset = $$results[3];
+				#my $md5 = $$results[4];
+				my $number = $$results[5];
+				my $pattern_copy = replacechars( $pattern );
+				my $file_printme = $file;
+				
+				$file_printme =~ s/\\\\/\\/g;
+				$file_printme = replacechars( $file_printme );
+
+				push(@fplist, { row_counter => $row_counter,
+                                type => $type,
+                                pattern_copy => $pattern_copy,
+                                file_printme => $file_printme,
+                                offset => $offset,
+                                number => $number});
+				$row_counter++;
+			}
+            $view_template->param(fplist => \@fplist);
+		}
+		elsif( $scantype =~ /^(mssql_agentless|mysql_agentless)$/ ) # TODO
+		{
+            $view_template->param(useformd => "1");
+            my @fplist = ();
+			if( $hostname ne "" )
+			{
+				$view_template->param(formdheading => "Select a false positive to clear for database server $ip ($hostname) in scan \"$scanname\":");
+			}
+			else
+			{
+                $view_template->param(formdheading => "Select a false positive to clear for database server $ip in scan \"$scanname\":");
+			}
+
+			my $string = "SELECT type,pattern,db,tbl,col,row,number FROM results WHERE scan=? AND tracker=? AND is_false = \"1\"";
+			my $sth = $dbh->prepare( $string );
+			$sth->execute( $scanname, $system );
+			my $row_counter = 1;
+			
+			$view_template->param(scanname => $scanname);
+            $view_template->param(tmpl_system => $system);
+
+			while( my $results = $sth->fetchrow_arrayref() )
+			{
+				my $type = $$results[0];
+				my $pattern = $$results[1];
+				my $db = $$results[2];
+				my $tbl = $$results[3];
+				my $col = $$results[4];
+				my $row = $$results[5];
+				my $number = $$results[6];
+				my $pattern_copy = replacechars( $pattern );
+				my $db_printme = replacechars( $db );
+				my $tbl_printme = replacechars( $tbl );
+				my $col_printme = replacechars( $col );
+
+                push(@fplist, { row_counter => $row_counter,
+                                type => $type,
+                                pattern_copy => $pattern_copy,
+                                db_printme => $db_printme,
+                                tbl_printme => $tbl_printme,
+                                col_printme => $col_printme,
+                                row => $row,
+                                number => $number});
+				$row_counter++;
+			}
+            $view_template->param(fplist => \@fplist);
+		}
+	}
+}
+
+if(scalar(@tmpl_errorlist) > 0)
+{
+    $view_template->param(errorlist => \@tmpl_errorlist);
+}
+print "Content-type: text/html\n\n", $view_template->output;
+
+
+sub replacechars
+{
+	my $string = shift;
+
+	$string =~ s/\&/\&amp;/g;
+	$string =~ s/\#/&#35;/g;
+	$string =~ s/"/&#34;/g;
+	$string =~ s/\%/&#37;/g;
+	$string =~ s/\'/&#39;/g;
+	$string =~ s/\//&#47;/g;
+	$string =~ s/</&#60;/g;
+	$string =~ s/>/&#62;/g;
+	$string =~ s/\[/&#91;/g;
+	$string =~ s/\\/&#92;/g;
+	$string =~ s/\]/&#93;/g;
+	$string =~ s/`/&#96;/g;
+	$string =~ s/{/&#123;/g;
+	$string =~ s/\|/&#124;/g;
+	$string =~ s/}/&#125;/g;
+	$string =~ s/\(/&#40;/g;
+	$string =~ s/\)/&#41;/g;
+	$string =~ s/\n/<br>/g;
+	$string =~ s/\ /&nbsp;/g;
+
+	return $string;
+}
+
+sub get_version
+{
+	open( V, "<../etc/version" );
+	my $v = <V>;
+	close( V );
+	chomp $v;
+	return $v;
+}
+

@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel=stylesheet type=text/css href=styles/style_a.css>
+   </head>
+   <body leftmargin=0 topmargin=0 onLoad="menu.toggleMe('profiles')">
+      <TMPL_INCLUDE NAME="./test_includeme.tmpl">
+      <table border=0 cellpadding=0 cellspacing=0>
+         <tr>
+            <td>
+<TMPL_LOOP NAME=error_list>               <!-- TMPL_VAR NAME=error --><br><br>
+</TMPL_LOOP>
+<TMPL_IF NAME=mainpageheading>               <heading><!-- TMPL_VAR NAME=mainpageheading --></heading><br><br></TMPL_IF>
+
+<TMPL_IF NAME=metasploit_table><!-- //TODO// --></TMPL_IF>
+
+<TMPL_IF NAME=winagent_table>
+               <!-- winagent table -->
+               <table class="sample">
+                  <tr>
+                     <td width=200>Profile Name</td>
+                     <td><!-- TMPL_VAR NAME=profile --></td>
+                  </tr>
+                  <tr>
+                     <td>Scan type</td>
+                     <td><!-- TMPL_VAR NAME=scantype --></td>
+                  </tr>
+<TMPL_IF NAME=emails>
+                  <tr>
+                     <td>Notify</td>
+                     <td><!-- TMPL_VAR NAME=emails --></td>
+                  </tr>
+</TMPL_IF>
+                  <tr>
+                     <td>Username</td>
+                     <td><!-- TMPL_VAR NAME=username --></td>
+                  </tr>
+                  <tr>
+                     <td>SMBHash</td>
+                     <td><!-- TMPL_VAR NAME=smbhash --></td>
+                  </tr>
+                  <tr>
+                     <td>Password</td>
+                     <td>****************</td>
+                  </tr>
+                  <tr>
+                     <td>Domain Name</td>
+                     <td><!-- TMPL_VAR NAME=domain --></td>
+                  </tr>
+                  <tr>
+                     <td>Installation Path</td>
+                     <td><!-- TMPL_VAR NAME=path --></td>
+                  </tr>
+                  <tr>
+                     <td>Memory Limit</td>
+                     <td><!-- TMPL_VAR NAME=memlim_value --></td>
+                  </tr>
+                  <tr>
+                     <td>Mask Sensitive Data</td>
+                     <td><!-- TMPL_VAR NAME=mask_value --></td>
+                  </tr>
+                  <tr>
+                     <td>Scan directories</td>
+                     <td><!-- TMPL_VAR NAME=dir_choice --></td>
+                  </tr>
+                  <tr>
+                     <td>Directories</td>
+                     <td><!-- TMPL_VAR NAME=directories --></td>
+                  </tr>
+                  <tr>
+                     <td>Scan file extensions</td>
+                     <td><!-- TMPL_VAR NAME=ext_choice --></td>
+                  </tr>
+                  <tr>
+                     <td>Extensions</td>
+                     <td><!-- TMPL_VAR NAME=extensions --></td>
+                  </tr>
+                  <tr>
+                     <td>Regular Expressions</td>
+                     <td><!-- TMPL_VAR NAME=regex_list --></td>
+                  </tr>
+                  <tr>
+                     <td>Credit Cards</td>
+                     <td><!-- TMPL_VAR NAME=creditcards --></td>
+                  </tr>
+                  <tr>
+                     <td>Zip File Extensions</td>
+                     <td><!-- TMPL_VAR NAME=zipfiles --></td>
+                  </tr>
+                  <tr>
+                     <td>Phone home URL username</td>
+                     <td><!-- TMPL_VAR NAME=urluser --></td>
+                  </tr>
+                  <tr>
+                     <td>Phone home URL password</td>
+                     <td>****************</td>
+                  </tr>
+                  <tr>
+                     <td>Phone home delay</td>
+                     <td><!-- TMPL_VAR NAME=delaytime --></td>
+                  </tr>
+                  <tr>
+                     <td>Concurrent deployments</td>
+                     <td><!-- TMPL_VAR NAME=concurrent --></td>
+                  </tr>
+                  <tr>
+                     <td>Windows Service description</td>
+                     <td><!-- TMPL_VAR NAME=description --></td>
+                  </tr>
+                  <tr>
+                     <td>Log Verbosity</td>
+                     <td><!-- TMPL_VAR NAME=debug --></td>
+                  </tr>
+               </table>
+               <!-- end winagent table // -->
+</TMPL_IF>
+
+<TMPL_IF NAME=winsmb_table>
+               <!-- winsmb table -->
+               <table class="sample">
+                  <tr>
+                     <td width=200>Profile Name</td>
+                     <td><!-- TMPL_VAR NAME=profile --></td>
+                  </tr>
+                  <tr>
+                     <td>Scan type</td>
+                     <td><!-- TMPL_VAR NAME=scantype --></td>
+                  </tr>
+<TMPL_IF NAME=emails>
+                  <tr>
+                     <td>Notify</td>
+                     <td><!-- TMPL_VAR NAME=emails --></td>
+                  </tr>
+</TMPL_IF>
+                  <tr>
+                     <td>Username</td>
+                     <td><!-- TMPL_VAR NAME=username --></td>
+                  </tr>
+                  <tr>
+                     <td>SMBHash</td>
+                     <td><!-- TMPL_VAR NAME=smbhash --></td>
+                  </tr>
+                  <tr>
+                     <td>Password</td>
+                     <td>****************</td>
+                  </tr>
+                  <tr>
+                     <td>Domain Name</td>
+                     <td><!-- TMPL_VAR NAME=domain --></td>
+                  </tr>
+                  <tr>
+                     <td>Memory Limit</td>
+                     <td><!-- TMPL_VAR NAME=memlim_value --></td>
+                  </tr>
+                  <tr>
+                     <td>Mask Sensitive Data</td>
+                     <td><!-- TMPL_VAR NAME=mask_value --></td>
+                  </tr>
+                  <tr>
+                     <td>Scan directories</td>
+                     <td><!-- TMPL_VAR NAME=dir_choice --></td>
+                  </tr>
+                  <tr>
+                     <td>Directories</td>
+                     <td><!-- TMPL_VAR NAME=directories --></td>
+                  </tr>
+                  <tr>
+                     <td>Scan file extensions</td>
+                     <td><!-- TMPL_VAR NAME=ext_choice --></td>
+                  </tr>
+                  <tr>
+                     <td>Extensions</td>
+                     <td><!-- TMPL_VAR NAME=extensions --></td>
+                  </tr>
+                  <tr>
+                     <td>Regular Expressions</td>
+                     <td><!-- TMPL_VAR NAME=regex_list --></td>
+                  </tr>
+                  <tr>
+                     <td>Credit Cards</td>
+                     <td><!-- TMPL_VAR NAME=creditcards --></td>
+                  </tr>
+                  <tr>
+                     <td>Zip File Extensions</td>
+                     <td><!-- TMPL_VAR NAME=zipfiles --></td>
+                  </tr>
+                  <tr>
+                     <td>Concurrent deployments</td>
+                     <td><!-- TMPL_VAR NAME=concurrent --></td>
+                  </tr>
+                  <tr>
+                     <td>Log Verbosity</td>
+                     <td><!-- TMPL_VAR NAME=debug --></td>
+                  </tr>
+               </table>
+</TMPL_IF>
+<TMPL_IF NAME=unixagentless_table>
+               <!-- unix agentless table -->
+               <table class="sample">
+                  <tr>
+                     <td width=200>Profile Name</td>
+                     <td><!-- TMPL_VAR NAME=profile --></td>
+                  </tr>
+                  <tr>
+                     <td>Scan type</td>
+                     <td><!-- TMPL_VAR NAME=scantype --></td>
+                  </tr>
+<TMPL_IF NAME=emails>
+                  <tr>
+                     <td>Notify</td>
+                     <td><!-- TMPL_VAR NAME=emails --></td>
+                  </tr>
+</TMPL_IF>
+                  <tr>
+                     <td>Username</td>
+                     <td><!-- TMPL_VAR NAME=username --></td>
+                  </tr>
+                  <tr>
+                     <td>Password</td>
+                     <td>****************</td>
+                  </tr>
+                  <tr>
+                     <td>Memory Limit</td>
+                     <td><!-- TMPL_VAR NAME=memlim_value --></td>
+                  </tr>
+                  <tr>
+                     <td>Mask Sensitive Data</td>
+                     <td><!-- TMPL_VAR NAME=mask_value --></td>
+                  </tr>
+                  <tr>
+                     <td>Scan directories</td>
+                     <td><!-- TMPL_VAR NAME=dir_choice --></td>
+                  </tr>
+                  <tr>
+                     <td>Directories</td>
+                     <td><!-- TMPL_VAR NAME=directories --></td>
+                  </tr>
+                  <tr>
+                     <td>Scan file extensions</td>
+                     <td><!-- TMPL_VAR NAME=ext_choice --></td>
+                  </tr>
+                  <tr>
+                     <td>Extensions</td>
+                     <td><!-- TMPL_VAR NAME=extensions --></td>
+                  </tr>
+                  <tr>
+                     <td>Regular Expressions</td>
+                     <td><!-- TMPL_VAR NAME=regex_list --></td>
+                  </tr>
+                  <tr>
+                     <td>Credit Cards</td>
+                     <td><!-- TMPL_VAR NAME=creditcards --></td>
+                  </tr>
+                  <tr>
+                     <td>Zip File Extensions</td>
+                     <td><!-- TMPL_VAR NAME=zipfiles --></td>
+                  </tr>
+                  <tr>
+                     <td>Concurrent deployments</td>
+                     <td><!-- TMPL_VAR NAME=concurrent --></td>
+                  </tr>
+                  <tr>
+                     <td>Log Verbosity</td>
+                     <td><!-- TMPL_VAR NAME=debug --></td>
+                  </tr>
+               </table>
+</TMPL_IF>
+<TMPL_IF NAME=database_table>
+               <!-- database table -->
+               <table class="sample">
+                  <tr>
+                     <td width=200>Profile Name</td>
+                     <td><!-- TMPL_VAR NAME=profile --></td>
+                  </tr>
+                  <tr>
+                     <td>Scan type</td>
+                     <td><!-- TMPL_VAR NAME=scantype --></td>
+                  </tr>
+<TMPL_IF NAME=emails>
+                  <tr>
+                     <td>Notify</td>
+                     <td><!-- TMPL_VAR NAME=emails --></td>
+                  </tr>
+</TMPL_IF>
+                  <tr>
+                     <td>Username</td>
+                     <td><!-- TMPL_VAR NAME=username --></td>
+                  </tr>
+                  <tr>
+                     <td>Password</td>
+                     <td>****************</td>
+                  </tr>
+                  <tr>
+                     <td>Mask Sensitive Data</td>
+                     <td><!-- TMPL_VAR NAME=mask_value --></td>
+                  </tr>
+
+                  <tr>
+                     <td>Scan databases</td>
+                     <td><!-- TMPL_VAR NAME=db_choice --></td>
+                  </tr>
+                  <tr>
+                     <td>Databases</td>
+                     <td><!-- TMPL_VAR NAME=dbs --></td>
+                  </tr>
+                  <tr>
+                     <td>Scan tables</td>
+                     <td><!-- TMPL_VAR NAME=table_choice --></td>
+                  </tr>
+                  <tr>
+                     <td>Tables</td>
+                     <td><!-- TMPL_VAR NAME=tables --></td>
+                  </tr>
+                  <tr>
+                     <td>Scan columns</td>
+                     <td><!-- TMPL_VAR NAME=column_choice --></td>
+                  </tr>
+                  <tr>
+                     <td>Columns</td>
+                     <td><!-- TMPL_VAR NAME=columns --></td>
+                  </tr>
+                  <tr>
+                     <td>Limit to rows</td>
+                     <td><!-- TMPL_VAR NAME=rows --></td>
+                  </tr>
+                  <tr>
+                     <td>Regular Expressions</td>
+                     <td><!-- TMPL_VAR NAME=regex_list --></td>
+                  </tr>
+                  <tr>
+                     <td>Credit Cards</td>
+                     <td><!-- TMPL_VAR NAME=creditcards --></td>
+                  </tr>
+                  <tr>
+                     <td>Concurrent deployments</td>
+                     <td><!-- TMPL_VAR NAME=concurrent --></td>
+                  </tr>
+                  <tr>
+                     <td>Log Verbosity</td>
+                     <td><!-- TMPL_VAR NAME=debug --></td>
+                  </tr>
+               </table>
+</TMPL_IF>
+            </td>
+         </tr>
+      </table>
+   </body>
+</html>

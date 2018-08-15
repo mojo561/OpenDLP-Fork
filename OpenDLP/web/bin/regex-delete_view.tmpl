@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+      <meta name="description" content="OpenDLP <!-- TMPL_VAR NAME=opendlpversion -->">
+      <meta name="author" content="JNR">
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel="stylesheet" type=text/css href="styles/bootstrap.min.css">
+      <link rel="stylesheet" type=text/css href="styles/style_d.css">
+   </head>
+   <body>
+<!--    NAV     -->
+<TMPL_INCLUDE NAME="./test_includeme.tmpl">
+<!--    //NAV   -->
+
+
+   <main role="main" class="mr-5 ml-md-5 mb-5 pt-5 mt-3">
+
+<TMPL_IF NAME=errorlist>
+<TMPL_LOOP NAME=errorlist>
+   <TMPL_VAR NAME=erroritem><br>
+</TMPL_LOOP>
+<TMPL_ELSE>
+<h2>Delete an existing regular expression</h2><br>
+<div class="w-75">
+   <form method=post action=regex-delete-verify.html>
+      <table class="table table-bordered table-sm table-hover">
+      <thead>
+         <tr>
+            <th>Delete</th>
+            <th>Regex Name</th>
+            <th>Regex</th>
+         </tr>
+      </thead>
+      <tbody>
+         <TMPL_LOOP NAME=regexlist>
+         <tr>
+            <td><input type=checkbox name="regex_<TMPL_VAR NAME=regexitemnum>" value=1></td>
+            <td><TMPL_VAR NAME=regexitemname></td>
+            <td><TMPL_VAR NAME=regexitempattern></td>
+         </tr>
+         </TMPL_LOOP>
+      </tbody>
+      </table>
+      <button type="submit" class="btn btn-outline-danger btn-md">Delete</button>
+   </form>
+</div>
+</TMPL_IF>
+
+   </main>
+
+   <!-- Bootstrap core JavaScript
+   ================================================== -->
+   <!-- Placed at the end of the document so the pages load faster -->
+   <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+   <script>window.jQuery || document.write('<script src="../../assets/js/vendor/jquery-slim.min.js"><\/script>')</script>
+   <script src="scripts/popper.min.js"></script>
+   <script src="scripts/bootstrap.min.js"></script>
+   </body>
+</html>

@@ -1,0 +1,147 @@
+#!/usr/bin/perl
+
+# Copyright Andrew Gavin 2009-2012
+# Modifications by JNR - 2018.08.05
+#
+# This file is part of OpenDLP.
+#
+# OpenDLP is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# OpenDLP is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with OpenDLP.  If not, see <http://www.gnu.org/licenses/>.
+
+
+use CGI qw/:standard/;
+use DBI;
+use HTML::Template;
+
+my $MAX_LENGTH_REGEX_NAME = 64;
+my $MAX_LENGTH_REGEX = 65535;
+my $db_admin_file = "../etc/db_admin";
+
+my $is_valid = 1;
+my( $regex_name, $pattern ) = "";
+
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+my ($db_username, $db_password) = split( ":", $db_line );
+
+my $view_template = HTML::Template->new(filename => 'regex-new_view.tmpl');
+$view_template->param(opendlpversion => get_version());
+my @tmpl_errorlist = ();
+
+
+if( request_method() ne "POST" )
+{
+	$is_valid = 0;
+	push(@tmpl_errorlist, {erroritem => "Only POST requests are allowed. Try starting <a href=profiles.html>here</a>."});
+}
+
+foreach $p (param())
+{
+	$form{$p} = param($p);
+
+	if( $p eq "regex_name" )
+	{
+		$regex_name = $form{$p};
+		if( length( $regex_name ) > $MAX_LENGTH_REGEX_NAME )
+		{
+			$is_valid = 0;
+			push(@tmpl_errorlist, {erroritem => "Regex name is too long. Limit it to $MAX_LENGTH_REGEX_NAME characters."});
+		}
+		if( $regex_name !~ /^[a-z0-9\-\_]+$/i )
+		{
+			$is_valid = 0;
+			push(@tmpl_errorlist, {erroritem => "Profile cannot be blank and can only contain the following characters: A-Za-z0-9-_"});
+		}
+	}
+
+	if( $p eq "regex" )
+	{
+		$regex = $form{$p};
+		if( length( $regex ) > $MAX_LENGTH_REGEX )
+		{
+			$is_valid = 0;
+			push(@tmpl_errorlist, {erroritem => "Regex is too long. Limit it to $MAX_LENGTH_REGEX characters."});
+		}
+		if( $regex eq "" || $regex =~ /^\ +$/ )
+		{
+			$is_valid = 0;
+			push(@tmpl_errorlist, {erroritem => "Regex cannot be blank."});
+		}
+	}
+}
+
+if( $is_valid )
+{
+	my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+
+	my $string = "SELECT name from regexes where name=?;";
+	my $sth = $dbh->prepare( $string );
+	$sth->execute( $regex_name );
+	my $results = $sth->fetchrow_arrayref();
+	if( $$results[0] eq "" )
+	{
+		$string = "INSERT INTO regexes SET name=?,pattern=?;";
+		$sth = $dbh->prepare($string);
+		$sth->execute($regex_name, $regex);
+
+		my $regex_copy = filter( $regex );
+		$view_template->param(regex_name => $regex_name);
+		$view_template->param(regex_copy => $regex_copy);
+	}
+	else
+	{
+		push(@tmpl_errorlist, {erroritem => "Duplicate regex name found. Try again with a different regex name."});
+	}
+	$sth->finish;
+	$dbh->disconnect;
+
+}
+
+if(scalar(@tmpl_errorlist) > 0)
+{
+    $view_template->param(errorlist => \@tmpl_errorlist);
+}
+print "Content-type: text/html\n\n", $view_template->output;
+
+sub filter
+{
+	my $thing = shift;
+	$thing =~ s/\&/\&amp;/g;
+	$thing =~ s/\#/&#35;/g;
+	$thing =~ s/"/&#34;/g;
+	$thing =~ s/\%/&#37;/g;
+	$thing =~ s/\'/&#39;/g;
+	$thing =~ s/\//&#47;/g;
+	$thing =~ s/</&#60;/g;
+	$thing =~ s/>/&#62;/g;
+	$thing =~ s/\[/&#91;/g;
+	$thing =~ s/\\/&#92;/g;
+	$thing =~ s/\]/&#93;/g;
+	$thing =~ s/`/&#96;/g;
+	$thing =~ s/{/&#123;/g;
+	$thing =~ s/\|/&#124;/g;
+	$thing =~ s/}/&#125;/g;
+	return $thing;
+}
+
+sub get_version
+{
+	open( V, "<../etc/version" );
+	my $v = <V>;
+	close( V );
+	chomp $v;
+	return $v;
+}
+

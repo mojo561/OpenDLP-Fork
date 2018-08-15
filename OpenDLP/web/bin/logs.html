@@ -1,0 +1,358 @@
+#!/usr/bin/perl
+
+# Copyright Andrew Gavin 2009-2012
+# Modified by JNR - 2018.08.11
+#
+# This file is part of OpenDLP.
+#
+# OpenDLP is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# OpenDLP is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with OpenDLP.  If not, see <http://www.gnu.org/licenses/>.
+
+
+use CGI qw/:standard/;
+use DBI;
+use POSIX qw( floor );
+use HTML::Template;
+
+my $view_template = HTML::Template->new(filename => "logs_view.tmpl");
+$view_template->param(opendlpversion => get_version());
+
+my $db_admin_file = "../etc/db_admin";
+my $is_valid = 1;
+#my %systems = ();
+my @tmpl_errorlist = ();
+
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+my ($db_username, $db_password) = split( ":", $db_line );
+header();
+my $query = CGI->new;
+my $scanname = $query->param('scanname');
+if( $scanname ne "" && $scanname !~ /^[a-z0-9\ \,\.\-\_]+$/i )
+{
+	$is_valid = 0;
+	push(@tmpl_errorlist, {erroritem => "Invalid scan name" });
+}
+
+my $system = $query->param('system');
+if( $system ne "" && $system !~ /^[A-Z0-9]{32}$/ )
+{
+	$is_valid = 0;
+	push(@tmpl_errorlist, {erroritem => "Invalid system tracker" });
+}
+
+if( $is_valid )
+{
+	# if no arguments are given
+	if( $system eq "" && $scanname eq "" )
+	{
+        $view_template->param(useforma => "1");
+        my @tablea_scanloglist = ();
+
+		my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+		my $string = "SELECT DISTINCT scan FROM logs";
+		my $sth = $dbh->prepare( $string );
+		$sth->execute();
+		while( my $results = $sth->fetchrow_hashref() )
+		{
+			push(@tablea_scanloglist, {tablea_scanlogitem => $results->{"scan"}});
+		}
+		$sth->finish();
+		$dbh->disconnect();
+		$view_template->param(tablea_scanloglist => \@tablea_scanloglist);
+	}
+
+	# if scanname is given as an argument, but not system
+	elsif( $scanname ne "" && $system eq "" )
+	{
+        $view_template->param(useformb => "1");
+        $view_template->param(scanname => $scanname);
+        my @tableb_scanloglist = ();
+
+		my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+		my $string = "SELECT DISTINCT tracker,system,ip,status,filestotal,filesdone,bytestotal,bytesdone,updated,control FROM systems WHERE scan=?";
+		my $sth = $dbh->prepare( $string );
+		$sth->execute( $scanname );
+		while( my $results = $sth->fetchrow_arrayref() )
+		{
+			$system{$$results[0]}{system} = $$results[1];
+			$system{$$results[0]}{ip} = $$results[2];
+			$system{$$results[0]}{status} = $$results[3];
+			$system{$$results[0]}{filestotal} = $$results[4];
+			$system{$$results[0]}{filesdone} = $$results[5];
+			$system{$$results[0]}{bytestotal} = $$results[6];
+			$system{$$results[0]}{bytesdone} = $$results[7];
+			$system{$$results[0]}{updated} = $$results[8];
+			$system{$$results[0]}{control} = $$results[9];
+		}
+
+		foreach my $tracking( sort( keys( %system )))
+		{
+            my $tmpl_control = "";
+            my $tmpl_scanstatus = "-1: Deploying";
+            my $tmpl_filesdone = "N/A";
+            my $tmpl_filestotal = "N/A";
+            my $tmpl_bytesdone = "N/A";
+            my $tmpl_bytestotal = "N/A";
+
+			my $string = "SELECT COUNT(*) FROM results WHERE scan=? AND tracker=?";
+			$sth = $dbh->prepare( $string );
+			$sth->execute( $scanname, $tracking );
+			my $results = $sth->fetchrow_arrayref();
+			$system{$tracking}{count} = $$results[0];
+
+			my $string = "SELECT COUNT(*) FROM logs WHERE scan=? AND tracker=?";
+			$sth = $dbh->prepare( $string );
+			$sth->execute( $scanname, $tracking );
+			my $results = $sth->fetchrow_arrayref();
+			$system{$tracking}{logs} = $$results[0];
+			
+			my $printme_ip = $system{$tracking}{ip};
+			$printme_ip = replacechars( $printme_ip );
+			
+			if( $system{$tracking}{status} == 0 )    { $tmpl_scanstatus = "0: All files"; }
+			elsif( $system{$tracking}{status} == 1 ) { $tmpl_scanstatus = "1: Whitelisting"; }
+			elsif( $system{$tracking}{status} == 2 ) { $tmpl_scanstatus = "2: Scanning"; }
+			elsif( $system{$tracking}{status} == 3 ) { $tmpl_scanstatus = "3: Done"; }
+			
+			if( $system{$tracking}{filesdone} ne "" )
+			{
+				$tmpl_filesdone = commify($system{$tracking}{filesdone});
+			}
+			if( $system{$tracking}{filestotal} ne "" )
+			{
+				$tmpl_filestotal = commify($system{$tracking}{filestotal});
+			}
+			if( $system{$tracking}{bytesdone} ne "" )
+			{
+				$tmpl_bytesdone = commify($system{$tracking}{bytesdone});
+			}
+			if( $system{$tracking}{bytestotal} ne "" )
+			{
+				$tmpl_bytestotal = commify($system{$tracking}{bytestotal});
+			}
+			
+			my $time = localtime( $system{$tracking}{updated} );
+			my $currenttime = time();
+			my $time_diff = $currenttime - $system{$tracking}{updated};
+			my $hours = floor($time_diff / 3600);
+			my $leftovers = $time_diff % 3600;
+			my $minutes = floor($leftovers / 60);
+			my $seconds = $time_diff % 60;
+			if( $hours < 10 ) { $hours = "0" . $hours; }
+			if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+			if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+
+			push(@tableb_scanloglist, { tracking => $tracking,
+                                        tmpl_system => $system{$tracking}{system},
+                                        printme_ip => $printme_ip,
+                                        control => $system{$tracking}{control},
+                                        scanstatus => $tmpl_scanstatus,
+                                        filesdone => $tmpl_filesdone,
+                                        filestotal => $tmpl_filestotal,
+                                        bytesdone => $tmpl_bytesdone,
+                                        bytestotal => $tmpl_bytestotal,
+                                        scanupdatetime => "$hours:$minutes:$seconds ago",
+                                        count => $system{$tracking}{count},
+                                        logs => $system{$tracking}{logs}});
+		}
+		$sth->finish();
+		$dbh->disconnect();
+		$view_template->param(tableb_scanloglist => \@tableb_scanloglist);
+	}
+
+	# look at details of specific system
+	elsif( $scanname ne "" && $system ne "" )
+	{
+        $view_template->param(useformc => "1");
+		my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+		my $string = "SELECT system,ip,status,filestotal,filesdone,bytestotal,bytesdone,updated,profile,control FROM systems WHERE scan=? AND tracker=?";
+		my $sth = $dbh->prepare( $string );
+		$sth->execute( $scanname, $system );
+		my $results = $sth->fetchrow_arrayref();
+		my $hostname = $$results[0];
+		my $ip = $$results[1];
+		my $status = $$results[2];
+		my $filestotal = $$results[3];
+		my $filesdone = $$results[4];
+		my $bytestotal = $$results[5];
+		my $bytesdone = $$results[6];
+		my $updated = $$results[7];
+		my $profile = $$results[8];
+		my $control = $$results[9];
+
+		my $string = "SELECT COUNT(*) FROM results WHERE scan=? AND tracker=?";
+		$sth = $dbh->prepare( $string );
+		$sth->execute( $scanname, $system );
+		my $results = $sth->fetchrow_arrayref();
+		my $total = $$results[0];
+
+		my $string = "SELECT COUNT(*) FROM results WHERE scan=? AND tracker=? AND is_false=\"1\"";
+		$sth = $dbh->prepare( $string );
+		$sth->execute( $scanname, $system );
+		my $results = $sth->fetchrow_arrayref();
+		my $fp_count = $$results[0];
+
+		my $printme_ip = $ip;
+		$printme_ip = replacechars( $printme_ip );
+		
+		if( $hostname ne "" )
+		{
+			$view_template->param(formcheader => "Logs for $printme_ip ($hostname)");
+		}
+		else
+		{
+            $view_template->param(formcheader => "Logs for $printme_ip");
+		}
+		
+		$view_template->param(profile => $profile);
+		$view_template->param(control => $control);
+		
+		if( $status == -1 )   {$view_template->param(scanstatus => "-1: Deploying");}
+		elsif( $status == 0 ) {$view_template->param(scanstatus => "0: All files");}
+		elsif( $status == 1 ) {$view_template->param(scanstatus => "1: Whitelisting");}
+		elsif( $status == 2 ) {$view_template->param(scanstatus => "2: Scanning");}
+		elsif( $status == 3 ) {$view_template->param(scanstatus => "3: Done");}
+
+		if( $filesdone ne "" )
+		{
+			$view_template->param(filesdone => commify($filesdone));
+		}
+		else
+		{
+			$view_template->param(filesdone => "N/A");
+		}
+
+		if( $filestotal ne "" )
+		{
+			$view_template->param(filestotal => commify($filestotal));
+		}
+		else
+		{
+			$view_template->param(filestotal => "N/A");
+		}
+
+		if( $bytesdone ne "" )
+		{
+			$view_template->param(bytesdone => commify($bytesdone));
+		}
+		else
+		{
+			$view_template->param(bytesdone => "N/A");
+		}
+
+		if( $bytestotal ne "" )
+		{
+			$view_template->param(bytestotal => commify($bytestotal));
+		}
+		else
+		{
+			$view_template->param(bytestotal => "N/A");
+		}
+
+		$view_template->param(total => $total);
+		$view_template->param(fp_count => $fp_count);
+		
+		my $diff = $total - $fp_count;
+		$view_template->param(diff => $diff);
+		
+		my $currenttime = time();
+		my $updatedtime = localtime( $updated );
+		my $timediff = $currenttime - $updated;
+		my $hours = floor($timediff / 3600);
+		my $leftovers = $timediff % 3600;
+		my $minutes = floor($leftovers / 60);
+		my $seconds = $timediff % 60;
+		if( $hours < 10 ) { $hours = "0" . $hours; }
+		if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+		if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+		$view_template->param(scanupdatetime => "$hours:$minutes:$seconds ago");
+
+		my $string = "SELECT updated,data FROM logs WHERE scan=? AND tracker=? ORDER BY updated,line";
+		$sth = $dbh->prepare( $string );
+		$sth->execute( $scanname, $system );
+		my $row_counter = 1;
+		my @logdatalist = ();
+		while( my $results = $sth->fetchrow_arrayref() )
+		{
+			my $timestamp = $$results[0];
+			my $logdata = $$results[1];
+
+			my $time = localtime( $$results[0] );
+			chomp( $logdata );
+			$logdata = replacechars( $logdata );
+			push(@logdatalist, {logdataitem_row_counter => $row_counter,
+                                logdataitem_time => $time,
+                                logdataitem_logdata => $logdata});
+			$row_counter++;
+		}
+		$sth->finish();
+		$dbh->disconnect();
+		$view_template->param(logdatalist => \@logdatalist);
+	}
+}
+
+if(scalar(@tmpl_errorlist) > 0)
+{
+    $view_template->param(errorlist => \@tmpl_errorlist);
+}
+print "Content-type: text/html\n\n", $view_template->output;
+
+
+sub replacechars
+{
+	my $string = shift;
+
+	$string =~ s/\&/\&amp;/g;
+	$string =~ s/\#/&#35;/g;
+	$string =~ s/"/&#34;/g;
+	$string =~ s/\%/&#37;/g;
+	$string =~ s/\'/&#39;/g;
+	$string =~ s/\//&#47;/g;
+	$string =~ s/</&#60;/g;
+	$string =~ s/>/&#62;/g;
+	$string =~ s/\[/&#91;/g;
+	$string =~ s/\\/&#92;/g;
+	$string =~ s/\]/&#93;/g;
+	$string =~ s/`/&#96;/g;
+	$string =~ s/{/&#123;/g;
+	$string =~ s/\|/&#124;/g;
+	$string =~ s/}/&#125;/g;
+	$string =~ s/\(/&#40;/g;
+	$string =~ s/\)/&#41;/g;
+	$string =~ s/\n//g;
+	$string =~ s/\r//g;
+	$string =~ s/\ /&nbsp;/g;
+
+	return $string;
+}
+
+sub get_version
+{
+	open( V, "<../etc/version" );
+	my $v = <V>;
+	close( V );
+	chomp $v;
+	return $v;
+}
+
+sub commify
+{
+	my $input = shift;
+	$input = reverse $input;
+	$input =~ s/(\d\d\d)(?=\d)(?!\d*\.)/$1,/g;
+	#return reverse $input;
+	return scalar reverse $input;
+}

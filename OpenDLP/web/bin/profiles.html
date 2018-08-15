@@ -1,0 +1,481 @@
+#!/usr/bin/perl
+
+# Copyright Andrew Gavin 2009-2012
+# Modifications by Charles Smith, N2 Net Security,Inc. 2011-2012
+# More modifications by JNR, 2018.07.05
+#
+# This file is part of OpenDLP.
+#
+# OpenDLP is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# OpenDLP is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with OpenDLP.  If not, see <http://www.gnu.org/licenses/>.
+
+
+use CGI qw/:standard/;
+use DBI;
+use HTML::Template;
+
+my $view_template = HTML::Template->new(filename => "profiles_view.tmpl");
+$view_template->param(opendlpversion => get_version());
+
+my $db_admin_file = "../etc/db_admin";
+my( $db_username, $db_password ) = "";
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+($db_username, $db_password) = split( ":", $db_line );
+
+my $query = CGI->new;
+my $old_profile = $query->param('edit');
+
+my( $old_username, $old_password, $old_domain, $old_exts, $old_ignore_exts, $old_dirs, $old_ignore_dirs ) = "";
+my( $old_regex, $old_path, $old_phonehomeurl, $old_phonehomeuser, $old_phonehomepass, $old_delaytime ) = "";
+my( $old_description, $old_debug, $old_concurrent, $old_creditcards, $old_zipfiles ) = "";
+my( $old_memory, $old_mask ) = "";
+my( $old_ignore_dbs, $old_dbs, $old_ignore_tables, $old_tables, $old_ignore_columns ) = "";
+my $old_scantype = "";
+my $old_found = 0;
+my ($old_metahost, $old_metaport, $old_metauser, $old_metapass, $old_metapath, $old_metassl) = "";
+my $old_metalatency = 100;
+my $old_columns = "";
+my $old_rows = 0;
+my $old_hash = "";
+my $old_metatimeout = 30;
+my $old_email_addr = "";
+
+if( $old_profile ne "" )
+{
+	my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+	my $string = "SELECT * from profiles where profile=?";
+	my $sth = $dbh->prepare( $string );
+	$sth->execute( $old_profile );
+    $results = $sth->fetchrow_hashref();
+
+    $old_username = $results->{"username"};
+    $old_password = $results->{"password"};
+    $old_domain = $results->{"domain"};
+    $old_exts = $results->{"exts"};
+    $old_ignore_exts = $results->{"ignore_exts"};
+    $old_dirs = $results->{"dirs"};
+    $old_ignore_dirs = $results->{"ignore_dirs"};
+    $old_regex = $results->{"regex"};
+    $old_path = $results->{"path"};
+    $old_phonehomeurl = $results->{"phonehomeurl"};
+    $old_phonehomeuser = $results->{"phonehomeuser"};
+    $old_phonehomepass = $results->{"phonehomepass"};
+    $old_delaytime = $results->{"delaytime"};
+    $old_description = $results->{"description"};
+    $old_debug = $results->{"debug"};
+    $old_concurrent = $results->{"concurrent"};
+    $old_creditcards = $results->{"creditcards"};
+    $old_zipfiles = $results->{"zipfiles"};
+    $old_memory = $results->{"memory"};
+    $old_mask = $results->{"mask"};
+    $old_hash = $results->{"hash"};
+    $old_ignore_dbs = $results->{"ignore_dbs"};
+    $old_dbs = $results->{"dbs"};
+    $old_ignore_tables = $results->{"ignore_tables"};
+    $old_tables = $results->{"tables"};
+    $old_ignore_columns = $results->{"ignore_columns"};
+    $old_columns = $results->{"columns"};
+    $old_rows = $results->{"rows"};
+    $old_scantype = $results->{"scantype"};
+    $old_metaport = $results->{"metaport"};
+    $old_metalatency = $results->{"metalatency"};
+    $old_metauser = $results->{"metauser"};
+    $old_metapass = $results->{"metapass"};
+    $old_metapath = $results->{"metapath"};
+    $old_metatimeout = $results->{"metatimeout"};
+    $old_metassl = $results->{"metassl"};
+    $old_metahost = $results->{"metahost"};
+    $old_email_addr = $results->{"email_addr"};
+   
+	$sth->finish;
+	$dbh->disconnect;
+
+	if( $results->{"profile"} ne "")
+	{
+		$old_found = 1;
+	}
+	if($old_rows eq "")
+	{
+        $old_rows = "0";
+    }
+}
+
+if($old_found == 0)
+{
+    $view_template->param(mainpage_headertext => "Create a new scan profile");
+}
+else
+{
+    $view_template->param(mainpage_headertext => "Editing \"$old_profile\"");
+    
+    $view_template->param(includepasswordupdatecheckbox => "1");
+    $view_template->param(includeurlpasswordupdatecheckbox => "1");
+}
+
+$view_template->param(oldprofile_found => $old_found);
+
+if( $old_found == 1 )
+{
+	$view_template->param(old_profilename => $old_profile);
+}
+
+$view_template->param(oldprofile_found => $old_found);
+
+my @scantype_list = ();
+
+push @scantype_list, {  scantype_optionfulltext => 'value="win_agent"',
+                        scantype_optionselectedtext => ($old_scantype eq "win_agent" ? "selected" : ""),
+                        scantype_optiondisplaytext => "Windows Filesystem (agent)"};
+push @scantype_list, {  scantype_optionfulltext => 'value="meta_agent"',
+                        scantype_optionselectedtext => ($old_scantype eq "meta_agent" ? "selected" : ""),
+                        scantype_optiondisplaytext => "Metasploit (agent) - Meterpreter deployment"};
+push @scantype_list, {  scantype_optionfulltext => 'value="post_agent"',
+                        scantype_optionselectedtext => ($old_scantype eq "post_agent" ? "selected" : ""),
+                        scantype_optiondisplaytext => "Metasploit (agent) - Post Module deployment (for Armitage compatibility)"};
+push @scantype_list, {  scantype_optiondisplaytext => "----------"};
+push @scantype_list, {  scantype_optionfulltext => 'value="win_agentless"',
+                        scantype_optionselectedtext => ($old_scantype eq "win_agentless" ? "selected" : ""),
+                        scantype_optiondisplaytext => "Windows Filesystem (agentless over SMB)"};
+push @scantype_list, {  scantype_optionfulltext => 'value="win_share"',
+                        scantype_optionselectedtext => ($old_scantype eq "win_share" ? "selected" : ""),
+                        scantype_optiondisplaytext => "Windows Network Share (agentless over SMB)"};
+push @scantype_list, {  scantype_optionfulltext => 'value="unix_agentless"',
+                        scantype_optionselectedtext => ($old_scantype eq "unix_agentless" ? "selected" : ""),
+                        scantype_optiondisplaytext => "UNIX Filesystem (agentless over SSH)"};
+push @scantype_list, {  scantype_optiondisplaytext => "----------"};
+push @scantype_list, {  scantype_optionfulltext => 'value="mssql_agentless"',
+                        scantype_optionselectedtext => ($old_scantype eq "mssql_agentless" ? "selected" : ""),
+                        scantype_optiondisplaytext => "Microsoft SQL Server (agentless)"};
+push @scantype_list, {  scantype_optionfulltext => 'value="mysql_agentless"',
+                        scantype_optionselectedtext => ($old_scantype eq "mysql_agentless" ? "selected" : ""),
+                        scantype_optiondisplaytext => "MySQL (agentless)"};
+$view_template->param(scantype_list => \@scantype_list);
+
+if( $old_found == 1 )
+{
+	if( $old_mask == 1 )
+	{
+		$view_template->param(old_maskcheckedtext => "checked");
+	}
+}
+else
+{
+	$view_template->param(old_maskcheckedtext => "checked");
+}
+
+if( $old_found == 1 && $old_email_addr ne "" )
+{
+    $view_template->param(old_emailcheckedtext => "checked");
+}
+else
+{
+    $view_template->param(email_styledisplayvalue => "none");
+}
+$view_template->param(old_emailaddresstext => $old_email_addr);
+
+if( $old_found == 1 )
+{
+	$view_template->param(old_usernamevalue => $old_username);
+}
+
+if( $old_found == 1 )
+{
+	$view_template->param(old_domainvalue => $old_domain);
+}
+
+# databases
+$view_template->param(old_scanalldbchecked => ($old_ignore_dbs eq "everything" ? "checked" : ""));
+if($old_ignore_dbs eq "ignore" || ($old_ignore_dbs eq "" && $old_found == 0))
+{
+    $view_template->param(old_scanalldbexceptionschecked => "checked");
+}
+$view_template->param(old_scanalldbinclusivechecked => ($old_ignore_dbs eq "allow" ? "checked" : ""));
+
+if( $old_found == 1 )
+{
+    $view_template->param(database_list => $old_dbs);
+}
+
+# tables
+$view_template->param(old_scanalltableschecked => ($old_ignore_tables eq "everything" ? "checked" : ""));
+if($old_ignore_tables eq "ignore" || ($old_ignore_tables eq "" && $old_found == 0))
+{
+    $view_template->param(old_scanalltablesexceptionschecked => "checked");
+}
+$view_template->param(old_scanalltablesinclusivechecked => ($old_ignore_tables eq "allow" ? "checked" : ""));
+
+if( $old_found == 1 )
+{
+    $view_template->param(dbtable_list => $old_tables);
+}
+
+# columns
+$view_template->param(old_scanallcolsexceptionschecked => ($old_ignore_columns eq "ignore" ? "checked" : ""));
+if($old_ignore_columns eq "everything" || ($old_ignore_columns eq "" && $old_found == 0))
+{
+    $view_template->param(old_scanallcolschecked => "checked");
+    $view_template->param(dbcol_disablevaluetext => "disabled");
+}
+$view_template->param(old_scanallcolsinclusivechecked => ($old_ignore_columns eq "allow" ? "checked" : ""));
+
+if( $old_found == 1 )
+{
+    $view_template->param(dbcol_list => $old_columns);
+}
+
+if( $old_found == 0 )
+{
+	$view_template->param(scanrowsvalue => 1000);
+}
+else
+{
+	$view_template->param(scanrowsvalue => $old_rows);
+}
+
+if( $old_found == 1 )
+{
+    $view_template->param(old_metahostvalue => $old_metahost);
+}
+
+if ($old_found == 1 && $old_metassl)
+{
+    $view_template->param(old_metausessslchecked => "checked");
+}
+
+if( $old_found == 1 )
+{
+    $view_template->param(metaportvalue => $old_metaport);
+}
+else
+{
+    $view_template->param(metaportvalue => 55552);
+}
+
+if( $old_found == 1 )
+{
+    $view_template->param(metauservalue => $old_metauser);
+}
+else
+{
+    $view_template->param(metauservalue => "msf");
+}
+
+if ($old_found == 1)
+{
+    $view_template->param(metapath => $old_metapath);
+}
+else
+{
+    $view_template->param(metapath => 'C:\OpenDLP\bin');
+}
+
+if ($old_found == 1)
+{
+    $view_template->param(metalatency => $old_metalatency);
+}
+else
+{
+    $view_template->param(metalatency => "100");
+}
+
+if ($old_found == 1)
+{
+    $view_template->param(metatimeoutvalue => $old_metatimeout);
+}
+else
+{
+    $view_template->param(metatimeoutvalue => "30");
+}
+
+if( $old_found == 1 )
+{
+    $view_template->param(old_smbhashvalue => $old_hash);
+}
+
+# TODO get this from a database table instead
+my @agentpaths_list = ();
+push @agentpaths_list, {    agentpath => 'C:\Program Files\OpenDLP',
+                            agentpath_selectedvaluetext => ($old_path =~ m/Program Files/ ? "selected" : "")};
+push @agentpaths_list, {    agentpath => 'C:\Program Files (x86)\OpenDLP',
+                            agentpath_selectedvaluetext => ($old_path =~ m/Program Files \(x86\)/ ? "selected" : "")};
+$view_template->param(agentpaths_list => \@agentpaths_list);
+
+my @memlim_list = ();
+#adapted from original code
+my @percents = ( .01, .02, .05, .1, .15, .2, .25 );
+foreach my $percent( @percents )
+{
+    my %memlim_element = (  memlimoptionval => $percent,
+                            memlim_selectedvaluetext => ($old_memory == $percent || ($old_found == 0 && $percent == 0.1) ? "selected" : ""),
+                            memlimoptiontext => $percent * 100 . '%');
+    push @memlim_list, \%memlim_element;
+}
+$view_template->param(memlim_list => \@memlim_list);
+
+$view_template->param(old_scanwinagentalldirschecked => ($old_ignore_dirs eq "everything" ? "checked" : ""));
+if($old_ignore_dirs eq "ignore" || ($old_ignore_dirs eq "" && $old_found == 0))
+{
+    $view_template->param(old_scanwinagentexceptionsdirschecked => "checked");
+}
+$view_template->param(old_scanwinagentinclusivedirschecked => ($old_ignore_dirs eq "allow" ? "checked" : ""));
+
+if( $old_found == 1 )
+{
+    $view_template->param(winagentpath_list => $old_dirs);
+}
+
+$view_template->param(old_scanwinagentallfileschecked => ($old_ignore_exts eq "everything" ? "checked" : ""));
+if($old_ignore_exts eq "ignore" || ($old_ignore_exts eq "" && $old_found == 0))
+{
+    $view_template->param(old_scanwinagentexceptionsfileschecked => "checked");
+}
+$view_template->param(old_scanwinagentinclusivefileschecked => ($old_ignore_exts eq "allow" ? "checked" : ""));
+if( $old_found == 0 )
+{
+    if( open(my $defaultfileexts, '<', "default_filetypes.tmpl") )
+    {
+        while(my $row = <$defaultfileexts>)
+        {
+            chomp $row;
+            $old_exts .= "$row\n";
+        }
+        $old_exts =~ s/\n$//;
+    }
+    else
+    {
+        warn "Couldn't open default_filetypes.tmpl. $!";
+    }
+}
+
+$view_template->param(winagentfileext_list => $old_exts);
+
+my @regexpattern_list = ();
+#adapted from old code
+my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+my $string = "select number,name from regexes";
+my $sth = $dbh->prepare( $string );
+$sth->execute();
+while( my $results = $sth->fetchrow_hashref() )
+{
+    my @old_regexes = split( ",", $old_regex );
+    my $check = "";
+    foreach my $re( @old_regexes )
+    {
+        if( $results->{"number"} == $re )
+        {
+            $check = "checked";
+        }
+    }
+    push @regexpattern_list, {  regexpattern_number => $results->{"number"},
+                                regexpattern_checkedvaluetext => $check,
+                                regexpattern_name => $results->{"name"}};
+}
+$sth->finish;
+$dbh->disconnect;
+$view_template->param(regexpattern_list => \@regexpattern_list);
+
+if($old_found == 0)
+{
+    my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+    my $string = "select name from regexes where lower(name) in (?, ?, ?, ?, ?, ?, ?, ?)";
+    my $sth = $dbh->prepare( $string );
+    $sth->execute("mastercard", "visa", "amex", "diners_club_1", "diners_club_2", "discover", "jcb_1", "jcb_2");
+    while(my $results = $sth->fetchrow_hashref())
+    {
+        $old_creditcards .= $results->{"name"} . "\n";
+    }
+    $old_creditcards =~ s/\n$//;
+    $sth->finish;
+    $dbh->disconnect;
+}
+
+$view_template->param(ccalias_list => $old_creditcards);
+
+if( $old_found == 0 )
+{
+    $old_zipfiles  = "zip\n";
+    $old_zipfiles .= "jar\n";
+    $old_zipfiles .= "xlsx\n";
+    $old_zipfiles .= "docx\n";
+    $old_zipfiles .= "pptx\n";
+    $old_zipfiles .= "odt\n";
+    $old_zipfiles .= "odp\n";
+    $old_zipfiles .= "ods\n";
+    $old_zipfiles .= "odg";
+}
+
+$view_template->param(zipext_list => $old_zipfiles);
+
+if( $old_found == 0 )
+{
+	my $results_url = url(-query_string=>1);
+	$results_url =~ s/profiles\.html$/results\/results\.html/;
+	$view_template->param(old_phonehomeurl => $results_url);
+}
+else
+{
+	$view_template->param(old_phonehomeurl => $old_phonehomeurl);
+}
+
+$view_template->param(old_phonehomeuser => $old_phonehomeuser);
+
+if( $old_found == 0 )
+{
+	$view_template->param(old_delaytime => "300");
+}
+else
+{
+	$view_template->param(old_delaytime => $old_delaytime);
+}
+
+$view_template->param(old_description => $old_description);
+
+if( $old_found == 0 )
+{
+	$view_template->param(is_new_value => "1");
+}
+else
+{
+	$view_template->param(is_new_value => "0");
+}
+
+$view_template->param(old_concurrent => $old_concurrent);
+
+my @debugopts_list = ();
+push @debugopts_list, { debugopts_value => "0",
+                        debugopts_selectedvaluetext => ($old_debug == 0 ? "selected" : ""),
+                        debugopts_optiontext => "0 - Normal"};
+push @debugopts_list, { debugopts_value => "1",
+                        debugopts_selectedvaluetext => ($old_debug == 1 ? "selected" : ""),
+                        debugopts_optiontext => "1 - More Verbose (Not recommended for large (100+) deployments)"};
+push @debugopts_list, { debugopts_value => "2",
+                        debugopts_selectedvaluetext => ($old_debug == 2 ? "selected" : ""),
+                        debugopts_optiontext => "2 - Extremely Verbose (Not recommended for medium (10+) deployments)"};
+push @debugopts_list, { debugopts_value => "3",
+                        debugopts_selectedvaluetext => ($old_debug == 3 ? "selected" : ""),
+                        debugopts_optiontext => "3 - Intensely Verbose (Not recommended for small (3+) deployments)"};
+$view_template->param(debugopts_list => \@debugopts_list);
+
+print "Content-type: text/html\n\n", $view_template->output;
+
+sub get_version
+{
+	open( V, "<../etc/version" );
+	my $v = <V>;
+	close( V );
+	chomp $v;
+	return $v;
+}

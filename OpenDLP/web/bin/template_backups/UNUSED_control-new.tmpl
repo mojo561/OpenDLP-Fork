@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <title>OpenDLP <!-- TMPL_VAR NAME=opendlpversion --></title>
+      <link rel=stylesheet type=text/css href=styles/style_a.css>
+   </head>
+   <body leftmargin=0 topmargin=0 onLoad="menu.toggleMe('scans')">
+      <TMPL_INCLUDE NAME="./test_includeme.tmpl">
+      <table border=0 cellpadding=0 cellspacing=0>
+         <tr>
+            <td>
+<TMPL_IF NAME="errormessage_list">
+<TMPL_LOOP NAME="errormessage_list">
+               <TMPL_VAR NAME=errormessage><br><br>
+</TMPL_LOOP>
+<TMPL_ELSE>
+               <p>
+               You need to enter your GPG passphrase to decrypt the system password first.
+               </p>
+               <form method="POST" action="control.html">
+                  <table class="sample">
+                     <tr><th colspan=2>Please enter your passphrase</th></tr>
+                     <tr>
+                        <td>GPG Recipient Name:</td>
+                        <td><u><TMPL_VAR NAME=gpgrecipientname></u></td>
+                     </tr>
+                     <tr>
+                        <td>Passphrase:</td>
+                        <td><input type="password" name="gpgpassphrase"></td>
+                     </tr>
+                        <tr>
+                        <td colspan="2"><input type=submit value="Continue"></td>
+                     </tr>
+                  </table>
+<TMPL_LOOP NAME="hidden_list">
+                  <input type="hidden" name="<TMPL_VAR NAME=hname>" value="<TMPL_VAR NAME=hvalue>">
+</TMPL_LOOP>
+               </form>
+</TMPL_IF>
+            </td>
+         </tr>
+      </table>
+   </body>
+</html>

@@ -1,0 +1,69 @@
+#!/usr/bin/perl
+
+# Copyright Andrew Gavin 2009-2012
+# Modifications by Charles Smith, N2 Net Security,Inc. 2011-2012
+# More modifications by Josh, 2018.06.30
+#
+# This file is part of OpenDLP.
+#
+# OpenDLP is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# OpenDLP is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with OpenDLP.  If not, see <http://www.gnu.org/licenses/>.
+
+
+use CGI qw/:standard/;
+use DBI;
+use HTML::Template;
+
+my $view_template = HTML::Template->new(filename => 'startscan_view.tmpl');
+
+my $db_admin_file = "../etc/db_admin";
+
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+my ($db_username, $db_password) = split( ":", $db_line );
+
+my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+#my $string = "SELECT number,profile,scantype,gpgrecipientname FROM profiles";
+my $string = "SELECT number,profile,scantype FROM profiles";
+my $sth = $dbh->prepare( $string );
+$sth->execute();
+
+my @option_output_list = ();
+while ( my $results = $sth->fetchrow_hashref() )
+{
+    my $profilename = $results->{"profile"};
+    my $scantype = $results->{"scantype"};
+
+    my %option_element = (  scan_profilename => $profilename,
+                            option_displaytext => "$profilename ($scantype)");
+    push @option_output_list, \%option_element;
+}
+
+$sth->finish();
+$dbh->disconnect();
+
+$view_template->param(opendlpversion => get_version());
+$view_template->param(option_output_list => \@option_output_list);
+
+print "Content-type: text/html\n\n", $view_template->output;
+
+sub get_version
+{
+	open( V, "<../etc/version" );
+	my $v = <V>;
+	close( V );
+	chomp $v;
+	return $v;
+}

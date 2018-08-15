@@ -1,0 +1,3197 @@
+#!/usr/bin/perl
+
+# Copyright Andrew Gavin 2009-2012
+# Modifications by Charles Smith, N2 Net Security,Inc. 2011-2012
+#
+# This file is part of OpenDLP.
+#
+# OpenDLP is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# OpenDLP is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with OpenDLP.  If not, see <http://www.gnu.org/licenses/>.
+
+
+use CGI qw/:standard/;
+use DBI;
+use POSIX qw( floor );
+use MIME::Base64;
+use MetaSploiter;
+
+#########################
+#new: Josh - June 21 2018
+#########################
+use HTML::Template;
+use Number::Format 'format_number';
+
+my $version = get_version();
+my $db_admin_file = "../etc/db_admin";
+my $is_valid = 1;
+my %systems = ();
+
+open( DB, $db_admin_file );
+my $db_line = <DB>;
+close( DB );
+chomp $db_line;
+my ($db_username, $db_password) = split( ":", $db_line );
+
+#########################
+#new: Josh - June 17 2018
+#########################
+#header();
+
+my $query = CGI->new;
+my $scanname = $query->param('scanname');
+if( $scanname ne "" && $scanname !~ /^[a-z0-9\ \,\.\-\_]+$/i )
+{
+	$is_valid = 0;
+	print "Invalid scan name<br><br>\n"; # TODO
+}
+
+my $system = $query->param('system');
+if( $system ne "" && $system !~ /^[A-Z0-9]{32}$/ )
+{
+	$is_valid = 0;
+	print "Invalid system tracker<br><br>\n"; # TODO
+}
+
+if( $is_valid )
+{
+	#print "<heading>View Results</heading><br><br>\n";
+
+	#############################
+	# if no arguments are given #
+	#############################
+	if( $system eq "" && $scanname eq "" )
+	{
+        #########################
+        #new: Josh - June 21 2018 TODO check...
+        #########################
+		my %scans = ();
+
+		my $view_template = HTML::Template->new(filename => 'viewresults_viewA.tmpl');
+        $view_template->param(opendlpversion => $version);
+        my @table_list = ();
+        
+		my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+		my $string = "SELECT DISTINCT scan,ip,control,scantype FROM systems";
+		my $sth = $dbh->prepare( $string );
+		$sth->execute();
+		my $agent_count = 0;
+		my $win_agentless_count = 0;
+		my $unix_agentless_count = 0;
+		my $win_share_count = 0;
+		my $db_count = 0;
+		
+		while(my $results = $sth->fetchrow_hashref())
+		{
+            my $lscanstats = $results->{"control"};
+            my $lscanname = $results->{"scan"};
+            my $lscantype = $results->{"scantype"};
+
+			if( $lscanstats eq "running" )
+			{
+				$scans{$lscanname}{running}++;
+			}
+			elsif( $lscanstats eq "finished" )
+			{
+				$scans{$lscanname}{finished}++;
+			}
+			elsif( $lscanstats eq "stopped" )
+			{
+				$scans{$lscanname}{stopped}++;
+			}
+			elsif( $lscanstats eq "uninstalled" )
+			{
+				$scans{$lscanname}{uninstalled}++;
+			}
+
+			$scans{$lscanname}{scantype} = $lscantype;
+			if( $lscantype eq "win_agent" || $lscantype eq "meta_agent" || $lscantype eq "post_agent") { $agent_count++; }
+			elsif( $lscantype eq "win_agentless" ) { $win_agentless_count++; }
+			elsif( $lscantype eq "win_share" ) { $win_share_count++; }
+			elsif( $lscantype eq "unix_agentless" ) { $unix_agentless_count++; }
+			elsif( $lscantype =~ /^(mssql_agentless|mysql_agentless)$/ ) { $db_count++; }
+		}
+		if( $agent_count > 0 )
+		{
+			my $total_finished = $total_running = $total_paused = $total_uninstalled = $total_total = 0;
+			my @output_list = ();
+			
+			foreach my $scankey( sort( keys( %scans )))
+			{
+				if( $scans{$scankey}{scantype} eq "win_agent"  || $scans{$scankey}{scantype} eq "meta_agent" || $scans{$scankey}{scantype} eq "post_agent")
+				{
+					my $total = $scans{$scankey}{running} + $scans{$scankey}{finished} + $scans{$scankey}{stopped} + $scans{$scankey}{uninstalled};
+					$total_total += $total;
+					$total_running += $scans{$scankey}{running};
+					$total_finished += $scans{$scankey}{finished};
+					$total_paused += $scans{$scankey}{stopped};
+					$total_uninstalled += $scans{$scankey}{uninstalled};
+					
+					my $wmpagent_pause = "N/A";
+					my $wmpagent_resume = "N/A";
+					my $wmpagent_uninstall = "N/A";
+
+					if( $total ne $scans{$scankey}{finished} )
+					{
+						# pause
+						if( $scans{$scankey}{running} > 0 )
+						{
+							$wmpagent_pause = "<a href=\"control.html?action=pause&scanname=$scankey\">Pause $scans{$scankey}{running} Agents</a>";
+						}
+						# resume
+						if( $scans{$scankey}{stopped} > 0 )
+						{
+							$wmpagent_resume = "<a href=\"control.html?action=resume&scanname=$scankey\">Resume $scans{$scankey}{stopped} Agents</a>";
+						}
+						# uninstall
+						my $stopped_and_running = $scans{$scankey}{stopped} + $scans{$scankey}{running};
+						if( $stopped_and_running > 0 )
+						{
+							$wmpagent_uninstall = "<a href=\"control.html?action=uninstall&scanname=$scankey\">Uninstall $stopped_and_running Agents</a>";
+						}
+					}
+					my %scanlist_element = (list_scankey => $scankey,
+                                            list_scantype => $scans{$scankey}{scantype},
+                                            list_numfinished => format_number ( $scans{$scankey}{finished} ),
+                                            list_numrunning =>  format_number ( $scans{$scankey}{running} ),
+                                            list_numstopped => format_number ( $scans{$scankey}{stopped} ),
+                                            list_numuninstalled => format_number ( $scans{$scankey}{uninstalled} ),
+                                            list_total => $total,
+                                            list_pause => $wmpagent_pause,
+                                            list_resume => $wmpagent_resume,
+                                            list_uninstall => $wmpagent_uninstall);
+					push @output_list, \%scanlist_element;
+				}
+			}
+			my %tablelist_element = (    output_list =>, \@output_list,
+                                        scanstop_flavortext => "Uninstall",
+                                        list_totalfinished => $total_finished,
+                                        list_totalrunning => $total_running,
+                                        list_totalpaused => $total_paused,
+                                        list_totaluninstalled => $total_uninstalled,
+                                        list_totaltotal => $total_total);
+			push @table_list, \%tablelist_element;
+		}
+
+		if( $win_agentless_count > 0 )
+		{
+			my $total_finished = $total_running = $total_paused = $total_uninstalled = $total_total = 0;
+			my @output_list = ();
+
+			foreach my $scankey( sort( keys( %scans )))
+			{
+				if( $scans{$scankey}{scantype} eq "win_agentless" )
+				{
+					my $total = $scans{$scankey}{running} + $scans{$scankey}{finished} + $scans{$scankey}{stopped} + $scans{$scankey}{uninstalled};
+					$total_total += $total;
+					$total_running += $scans{$scankey}{running};
+					$total_finished += $scans{$scankey}{finished};
+					$total_paused += $scans{$scankey}{stopped};
+					$total_uninstalled += $scans{$scankey}{uninstalled};
+
+					my $wmpagent_pause = "N/A";
+					my $wmpagent_resume = "N/A";
+					my $wmpagent_uninstall = "N/A";
+
+					if( $total ne $scans{$scankey}{finished} )
+					{
+						# pause
+						if( $scans{$scankey}{running} > 0 )
+						{
+							$wmpagent_pause = "<a href=\"control.html?action=pause&scanname=$scankey\">Pause $scans{$scankey}{running} Scans</a>";
+						}
+						# resume
+						if( $scans{$scankey}{stopped} > 0 )
+						{
+							$wmpagent_resume = "<a href=\"control.html?action=resume&scanname=$scankey\">Resume $scans{$scankey}{stopped} Scans</a>";
+						}
+
+						# uninstall
+						my $stopped_and_running = $scans{$scankey}{stopped} + $scans{$scankey}{running};
+						if( $stopped_and_running > 0 )
+						{
+							$wmpagent_uninstall = "<a href=\"control.html?action=uninstall&scanname=$scankey\">Uninstall $stopped_and_running Scans</a>";
+						}
+					}
+					my %scanlist_element = (list_scankey => $scankey,
+                                            list_scantype => $scans{$scankey}{scantype},
+                                            list_numfinished => format_number ( $scans{$scankey}{finished} ),
+                                            list_numrunning =>  format_number ( $scans{$scankey}{running} ),
+                                            list_numstopped => format_number ( $scans{$scankey}{stopped} ),
+                                            list_numuninstalled => format_number ( $scans{$scankey}{uninstalled} ),
+                                            list_total => $total,
+                                            list_pause => $wmpagent_pause,
+                                            list_resume => $wmpagent_resume,
+                                            list_uninstall => $wmpagent_uninstall);
+					push @output_list, \%scanlist_element;
+				}
+			}
+			my %tablelist_element = (    output_list =>, \@output_list,
+                                        scanstop_flavortext => "Uninstall",
+                                        list_totalfinished => $total_finished,
+                                        list_totalrunning => $total_running,
+                                        list_totalpaused => $total_paused,
+                                        list_totaluninstalled => $total_uninstalled,
+                                        list_totaltotal => $total_total);
+			push @table_list, \%tablelist_element;
+		}
+
+		if( $win_share_count > 0 )
+		{
+			my $total_finished = $total_running = $total_paused = $total_uninstalled = $total_total = 0;
+			my @output_list = ();
+
+			foreach my $scankey( sort( keys( %scans )))
+			{
+				if( $scans{$scankey}{scantype} eq "win_share" )
+				{
+					my $total = $scans{$scankey}{running} + $scans{$scankey}{finished} + $scans{$scankey}{stopped} + $scans{$scankey}{uninstalled};
+					$total_total += $total;
+					$total_running += $scans{$scankey}{running};
+					$total_finished += $scans{$scankey}{finished};
+					$total_paused += $scans{$scankey}{stopped};
+					$total_uninstalled += $scans{$scankey}{uninstalled};
+					
+					my $wmpagent_pause = "N/A";
+					my $wmpagent_resume = "N/A";
+					my $wmpagent_uninstall = "N/A";
+
+					if( $total ne $scans{$scankey}{finished} )
+					{
+						# pause
+						if( $scans{$scankey}{running} > 0 )
+						{
+							$wmpagent_pause = "<a href=\"control.html?action=pause&scanname=$scankey\">Pause $scans{$scankey}{running} Scans</a>";
+						}
+						# resume
+						if( $scans{$scankey}{stopped} > 0 )
+						{
+							$wmpagent_resume = "<a href=\"control.html?action=resume&scanname=$scankey\">Resume $scans{$scankey}{stopped} Scans</a>";
+						}
+						# uninstall
+						my $stopped_and_running = $scans{$scankey}{stopped} + $scans{$scankey}{running};
+						if( $stopped_and_running > 0 )
+						{
+							$wmpagent_uninstall = "<a href=\"control.html?action=uninstall&scanname=$scankey\">Uninstall $stopped_and_running Scans</a>";
+						}
+					}
+					my %scanlist_element = (list_scankey => $scankey,
+                                            list_scantype => $scans{$scankey}{scantype},
+                                            list_numfinished => format_number ( $scans{$scankey}{finished} ),
+                                            list_numrunning =>  format_number ( $scans{$scankey}{running} ),
+                                            list_numstopped => format_number ( $scans{$scankey}{stopped} ),
+                                            list_numuninstalled => format_number ( $scans{$scankey}{uninstalled} ),
+                                            list_total => $total,
+                                            list_pause => $wmpagent_pause,
+                                            list_resume => $wmpagent_resume,
+                                            list_uninstall => $wmpagent_uninstall);
+					push @output_list, \%scanlist_element;
+				}
+			}
+			my %tablelist_element = (    output_list =>, \@output_list,
+                                        scanstop_flavortext => "Uninstall",
+                                        list_totalfinished => $total_finished,
+                                        list_totalrunning => $total_running,
+                                        list_totalpaused => $total_paused,
+                                        list_totaluninstalled => $total_uninstalled,
+                                        list_totaltotal => $total_total);
+			push @table_list, \%tablelist_element;
+		}
+
+		if( $unix_agentless_count > 0 )
+		# TODO most of this is the exact same logic as the above blocks besides some flavor text... can we optimize?
+		{
+			my $total_finished = $total_running = $total_paused = $total_uninstalled = $total_total = 0;
+
+			my @output_list = ();
+			foreach my $scankey( sort( keys( %scans )))
+			{
+				if( $scans{$scankey}{scantype} eq "unix_agentless" )
+				{
+					my $total = $scans{$scankey}{running} + $scans{$scankey}{finished} + $scans{$scankey}{stopped} + $scans{$scankey}{uninstalled};
+					$total_total += $total;
+					$total_running += $scans{$scankey}{running};
+					$total_finished += $scans{$scankey}{finished};
+					$total_paused += $scans{$scankey}{stopped};
+					$total_uninstalled += $scans{$scankey}{uninstalled};
+					
+					my $wmpagent_pause = "N/A";
+					my $wmpagent_resume = "N/A";
+					my $wmpagent_uninstall = "N/A";
+
+					if( $total ne $scans{$scankey}{finished} )
+					{
+						# pause
+						if( $scans{$scankey}{running} > 0 )
+						{
+							$wmpagent_pause = "<a href=\"control.html?action=pause&scanname=$scankey\">Pause $scans{$scankey}{running} Scans</a>";
+						}
+						# resume
+						if( $scans{$scankey}{stopped} > 0 )
+						{
+							$wmpagent_resume = "<a href=\"control.html?action=resume&scanname=$scankey\">Resume $scans{$scankey}{stopped} Scans</a>";
+						}
+						# uninstall
+						my $stopped_and_running = $scans{$scankey}{stopped} + $scans{$scankey}{running};
+						if( $stopped_and_running > 0 )
+						{
+							$wmpagent_uninstall = "<a href=\"control.html?action=uninstall&scanname=$scankey\">Uninstall $stopped_and_running Scans</a>";
+						}
+					}
+					my %scanlist_element = (list_scankey => $scankey,
+                                            list_scantype => $scans{$scankey}{scantype},
+                                            #bit of a hack here... rely on format_number() to return "0" where applicable
+                                            list_numfinished => format_number ( $scans{$scankey}{finished} ),
+                                            list_numrunning =>  format_number ( $scans{$scankey}{running} ),
+                                            list_numstopped => format_number ( $scans{$scankey}{stopped} ),
+                                            list_numuninstalled => format_number ( $scans{$scankey}{uninstalled} ),
+                                            list_total => $total,
+                                            list_pause => $wmpagent_pause,
+                                            list_resume => $wmpagent_resume,
+                                            list_uninstall => $wmpagent_uninstall);
+                    push @output_list, \%scanlist_element;
+				}
+			}
+			my %tablelist_element = (    output_list =>, \@output_list,
+                                        scanstop_flavortext => "Kill",
+                                        list_totalfinished => $total_finished,
+                                        list_totalrunning => $total_running,
+                                        list_totalpaused => $total_paused,
+                                        list_totaluninstalled => $total_uninstalled,
+                                        list_totaltotal => $total_total);
+			push @table_list, \%tablelist_element;
+		}
+
+		if( $db_count > 0 )
+		{
+			my $total_finished = $total_running = $total_paused = $total_uninstalled = $total_total = 0;
+			my @output_list = ();
+
+			foreach my $scankey( sort( keys( %scans )))
+			{
+				if( $scans{$scankey}{scantype} =~ /^(mssql_agentless|mysql_agentless)$/ )
+				{
+					my $total = $scans{$scankey}{running} + $scans{$scankey}{finished} + $scans{$scankey}{stopped} + $scans{$scankey}{uninstalled};
+					$total_total += $total;
+					$total_running += $scans{$scankey}{running};
+					$total_finished += $scans{$scankey}{finished};
+					$total_paused += $scans{$scankey}{stopped};
+					$total_uninstalled += $scans{$scankey}{uninstalled};
+
+					my $wmpagent_pause = "N/A";
+					my $wmpagent_resume = "N/A";
+					my $wmpagent_uninstall = "N/A";
+
+					if( $total ne $scans{$scankey}{finished} )
+					{
+						# pause
+						if( $scans{$scankey}{running} > 0 )
+						{
+							$wmpagent_pause = "<a href=\"control.html?action=pause&scanname=$scankey\">Pause $scans{$scankey}{running} Scans</a>";
+						}
+						# resume
+						if( $scans{$scankey}{stopped} > 0 )
+						{
+							$wmpagent_resume = "<a href=\"control.html?action=resume&scanname=$scankey\">Resume $scans{$scankey}{stopped} Scans</a>";
+						}
+						# uninstall
+						my $stopped_and_running = $scans{$scankey}{stopped} + $scans{$scankey}{running};
+						if( $stopped_and_running > 0 )
+						{
+							$wmpagent_uninstall = "<a href=\"control.html?action=uninstall&scanname=$scankey\">Uninstall $stopped_and_running Scans</a>";
+						}
+					}
+					my %scanlist_element = (list_scankey => $scankey,
+                                            list_scantype => $scans{$scankey}{scantype},
+                                            list_numfinished => format_number ( $scans{$scankey}{finished} ),
+                                            list_numrunning =>  format_number ( $scans{$scankey}{running} ),
+                                            list_numstopped => format_number ( $scans{$scankey}{stopped} ),
+                                            list_numuninstalled => format_number ( $scans{$scankey}{uninstalled} ),
+                                            list_total => $total,
+                                            list_pause => $wmpagent_pause,
+                                            list_resume => $wmpagent_resume,
+                                            list_uninstall => $wmpagent_uninstall);
+					push @output_list, \%scanlist_element;
+				}
+			}
+			my %tablelist_element = (    output_list =>, \@output_list,
+                                        scanstop_flavortext => "Kill",
+                                        list_totalfinished => $total_finished,
+                                        list_totalrunning => $total_running,
+                                        list_totalpaused => $total_paused,
+                                        list_totaluninstalled => $total_uninstalled,
+                                        list_totaltotal => $total_total);
+			push @table_list, \%tablelist_element;
+		}
+		
+		$sth->finish();
+		$dbh->disconnect();
+		
+		$view_template->param(table_list => \@table_list);
+		print "Content-type: text/html\n\n", $view_template->output;
+	}
+
+	#######################################################
+	# if scanname is given as an argument, but not system #
+	#######################################################
+	elsif( $scanname ne "" && $system eq "" )
+	{
+        #########################
+        #new: Josh - June 21 2018 TODO check...
+        #########################
+        my $view_template = HTML::Template->new(filename => 'viewresults_viewB.tmpl');
+        $view_template->param(opendlpversion => $version);
+        
+		my $scantype = "";
+		my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+		my $string = "SELECT DISTINCT tracker,system,ip,status,filestotal,filesdone,bytestotal,bytesdone,updated,control,scantype,pid,dbtotal,dbdone,tabletotal,tabledone,columntotal,columndone FROM systems WHERE scan=?";
+		my $sth = $dbh->prepare( $string );
+		$sth->execute( $scanname );
+		#while( my $results = $sth->fetchrow_arrayref() )
+		while( my $results = $sth->fetchrow_hashref() )
+		{
+            my $ltracker = $results->{"tracker"};
+			$system{$ltracker}{system}     = $results->{"system"};
+			$system{$ltracker}{ip}         = $results->{"ip"};
+			$system{$ltracker}{status}     = $results->{"status"};
+			$system{$ltracker}{filestotal} = $results->{"filestotal"};
+			$system{$ltracker}{filesdone}  = $results->{"filesdone"};
+			$system{$ltracker}{bytestotal} = $results->{"bytestotal"};
+			$system{$ltracker}{bytesdone}  = $results->{"bytesdone"};
+			$system{$ltracker}{updated}    = $results->{"updated"};
+			$system{$ltracker}{control}    = $results->{"control"};
+			$scantype                      = $results->{"scantype"};
+			$system{$ltracker}{pid}        = $results->{"pid"};
+			$system{$ltracker}{dbtotal}    = $results->{"dbtotal"};
+			$system{$ltracker}{dbdone}     = $results->{"dbdone"};
+			$system{$ltracker}{tabletotal} = $results->{"tabletotal"};
+			$system{$ltracker}{tabledone}  = $results->{"tabledone"};
+			$system{$ltracker}{columntotal}= $results->{"columntotal"};
+			$system{$ltracker}{columndone} = $results->{"columndone"};
+		}
+		$sth->finish();
+
+		if( $scantype eq "win_agent" || $scantype eq "meta_agent" || $scantype eq "post_agent")
+		{
+			#print "Select a system to view its results for scan \"$scanname\":<br><br>\n";
+			#print "<form method=GET action=viewresults.html>\n";
+			#print "<input type=hidden name=scanname value=\"$scanname\">\n";
+			#print "<table class=sample>\n";
+			$view_template->param(instructions => "Select a system to view its results for scan \"$scanname\":");
+			$view_template->param(scanname => $scanname);
+			
+			#print "<tr><td><br></td><td>Network name</td><td>IP address</td><td>Status</td><td>Step</td><td>Files done</td><td>Total files</td><td>Bytes done</td><td>Total bytes</td><td>Updated</td><td>Findings</td><td>Pause</td><td>Resume</td><td>Uninstall</td></tr>\n";
+			
+			my @output_list = ();
+            foreach my $tracking( sort( keys( %system )))
+			{
+				my $string = "SELECT COUNT(*) FROM results WHERE scan=? AND tracker=?";
+				$sth = $dbh->prepare( $string );
+				$sth->execute( $scanname, $tracking );
+				my $results = $sth->fetchrow_arrayref();
+				$system{$tracking}{count} = $$results[0];
+				$sth->finish();
+
+				my $trackfilesdone = "N/A";
+				my $trackfilestotal = "N/A";
+				my $trackbytesdone = "N/A";
+				my $trackbytestotal = "N/A";
+				my $tracklastupdate = "";
+				my $trackctrlrun = "N/A";
+				my $trackctrlstop = "N/A";
+				my $trackctrlunin = "N/A";
+				my $width = "";
+				my $trackremainprogress = "";
+
+				my $trackstatus = "-1: Deploying";
+				if ( $system{$tracking}{status} == 0 ){ $trackstatus = "0: All files";}
+				elsif( $system{$tracking}{status} == 1 ){ $trackstatus = "1: Whitelisting";}
+				elsif( $system{$tracking}{status} == 2 ){ $trackstatus = "2: Scanning";}
+				elsif( $system{$tracking}{status} == 3 ){ $trackstatus = "3: Done";}
+				
+				#print "\n<tr><td rowspan=2><input type=radio name=system value=$tracking></td>\n";
+				#print "<td>$system{$tracking}{system}</td>\n";
+				#print "<td>$system{$tracking}{ip}</td>\n";
+				#print "<td>$system{$tracking}{control}</td>\n";
+
+				if( $system{$tracking}{filesdone} ne "" )
+				{
+					$trackfilesdone = format_number($system{$tracking}{filesdone});
+				}
+				if( $system{$tracking}{filestotal} ne "" )
+				{
+					$trackfilestotal = format_number($system{$tracking}{filestotal});
+                }
+				if( $system{$tracking}{bytesdone} ne "" )
+				{
+					$trackbytesdone = format_number($system{$tracking}{bytesdone});
+				}
+				if( $system{$tracking}{bytestotal} ne "" )
+				{
+					$trackbytestotal = format_number($system{$tracking}{bytestotal});
+				}
+
+				my $time = localtime( $system{$tracking}{updated} );
+				my $currenttime = time();
+				my $time_diff = $currenttime - $system{$tracking}{updated};
+				my $hours = floor($time_diff / 3600);
+				my $leftovers = $time_diff % 3600;
+				my $minutes = floor($leftovers / 60);
+				my $seconds = $time_diff % 60;
+				if( $hours < 10 ) { $hours = "0" . $hours; }
+				if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+				if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+				#print "<td>$hours:$minutes:$seconds ago</td>\n";
+				$tracklastupdate = "$hours:$minutes:$seconds ago";
+				#print "<td align=right>$system{$tracking}{count}</td>\n";
+
+				# pause
+				if( $system{$tracking}{control} eq "running" )
+				{
+					#print "<td><a href=\"control.html?action=pause&scanname=$scanname&system=$tracking\">Pause</a></td>\n";
+					$trackctrlrun = "<a href=\"control.html?action=pause&scanname=$scanname&system=$tracking\">Pause</a>";
+				}
+
+				# resume
+				if( $system{$tracking}{control} eq "stopped" )
+				{
+					#print "<td><a href=\"control.html?action=resume&scanname=$scanname&system=$tracking\">Resume</a></td>\n";
+					$trackctrlstop = "<a href=\"control.html?action=resume&scanname=$scanname&system=$tracking\">Resume</a>";
+				}
+
+				# uninstall
+				if( $system{$tracking}{control} =~ /^(stopped|running)$/i )
+				{
+					#print "<td><a href=\"control.html?action=uninstall&scanname=$scanname&system=$tracking\">Uninstall</a></td>\n";
+					$trackctrlunin = "<a href=\"control.html?action=uninstall&scanname=$scanname&system=$tracking\">Uninstall</a>";
+				}
+
+				#print "</tr>\n";
+				#print "<tr><td colspan=4><br></td>\n";
+				#print "<td colspan=4>\n";
+				my $rounded = "";
+				if( $system{$tracking}{status} > 1 )
+				{
+					if( $system{$tracking}{status} != 3 )
+					{
+						my $percent = 100 * $system{$tracking}{bytesdone} / $system{$tracking}{bytestotal};
+						$rounded = sprintf( "%.2f", $percent );
+					}
+					else
+					{
+						$rounded = "100";
+					}
+					$width = 2 * $rounded;
+					$width = floor( $width );
+					#print "<table class=sample width=206><tr><td>\n";
+					#print "<img src=\"images/red.gif\" width=\"$width\" height=\"10\">\n";
+					#print "</td></tr></table>\n";
+				}
+				else
+				{
+					#print "<br>";
+				}
+				#print "</td><td colspan=5>";
+				if( $system{$tracking}{status} > 1 )
+				{
+					#print "$rounded\% done";
+					$trackremainprogress = "$rounded\% done";
+
+					if( $system{$tracking}{status} != 3 )
+					{
+						my $string = "SELECT updated FROM logs WHERE tracker=? ORDER BY updated LIMIT 1";
+						$sth = $dbh->prepare( $string );
+						$sth->execute( $tracking );
+						my $results = $sth->fetchrow_arrayref();
+						my $starttime = $$results[0];
+						$sth->finish();
+						my $currenttime = time();
+						my $difftime = $currenttime - $starttime;
+						my $eta = ($difftime / ($rounded / 100 )) - $difftime;
+						$eta = floor( $eta );
+						my $hours = floor( $eta / 3600 );
+						my $leftovers = $eta % 3600;
+						my $minutes = floor( $leftovers / 60 );
+						$seconds = $eta % 60;
+						if( $hours < 10 ) { $hours = "0" . $hours; }
+						if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+						if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+						#print ", approx $hours:$minutes:$seconds remaining";
+						$trackremainprogress .= ", approx $hours:$minutes:$seconds remaining";
+					}
+				}
+				else
+				{
+					#print "<br>\n";
+				}
+				#print "</td>\n";
+				#print "</tr>\n";
+				
+				my %list_element = (tracking => $tracking,
+                                    tracking_system => $system{$tracking}{system},
+                                    tracking_ip => $system{$tracking}{ip},
+                                    tracking_control => $system{$tracking}{control},
+                                    tracking_status => $trackstatus,
+                                    tracking_filesdone => $trackfilesdone,
+                                    tracking_filestotal => $trackfilestotal,
+                                    tracking_bytesdone => $trackbytesdone,
+                                    tracking_bytestotal => $trackbytestotal,
+                                    tracking_time => $tracklastupdate,
+                                    tracking_count => $system{$tracking}{count},
+                                    tracking_running => $trackctrlrun,
+                                    tracking_stopped => $trackctrlstop,
+                                    tracking_uninstalled => $trackctrlunin,
+                                    tracking_stateok => "1",
+                                    tracking_progress => $width,
+                                    tracking_roundedprogress => $trackremainprogress);
+                if($system{$tracking}{status} <= 1)
+                {
+                    delete $list_element{tracking_progress};
+                    delete $list_element{tracking_roundedprogress};
+                    delete $list_element{tracking_stateok};
+                }
+				push @output_list, \%list_element;
+			}
+			$view_template->param(tableA => "1");
+			$view_template->param(output_list => \@output_list);
+			#print "<tr><td colspan=14><input type=submit value=\"View Results\"></td></tr></table>\n";
+		}
+		elsif( $scantype eq "win_agentless" )
+		{
+            $view_template->param(instructions => "Select a system to view its results for scan \"$scanname\":");
+            $view_template->param(scanname => $scanname);
+			my @output_list = ();
+
+			foreach my $tracking( sort( keys( %system )))
+			{
+				my $string = "SELECT COUNT(*) FROM results WHERE scan=? AND tracker=?";
+				$sth = $dbh->prepare( $string );
+				$sth->execute( $scanname, $tracking );
+				my $results = $sth->fetchrow_arrayref();
+				$system{$tracking}{count} = $$results[0];
+				$sth->finish();
+
+				my $trackfilesdone = "N/A";
+				my $trackfilestotal = "N/A";
+				my $trackbytesdone = "N/A";
+				my $trackbytestotal = "N/A";
+				my $tracklastupdate = "";
+				my $trackctrlrun = "N/A";
+				my $trackctrlstop = "N/A";
+				my $trackctrlunin = "N/A";
+				my $width = "";
+				my $trackremainprogress = "";
+				my $trackstatus = "-1: Deploying";
+				
+				if ( $system{$tracking}{status} == 0 ){ $trackstatus = "0: All files";}
+				elsif( $system{$tracking}{status} == 1 ){ $trackstatus = "1: Whitelisting";}
+				elsif( $system{$tracking}{status} == 2 ){ $trackstatus = "2: Scanning";}
+				elsif( $system{$tracking}{status} == 3 ){ $trackstatus = "3: Done";}
+				
+				if( $system{$tracking}{filesdone} ne "" )
+				{
+					$trackfilesdone = format_number($system{$tracking}{filesdone});
+				}
+				if( $system{$tracking}{filestotal} ne "" )
+				{
+					$trackfilestotal = format_number($system{$tracking}{filestotal});
+				}
+				if( $system{$tracking}{bytesdone} ne "" )
+				{
+					$trackbytesdone = format_number($system{$tracking}{bytesdone});
+				}
+				if( $system{$tracking}{bytestotal} ne "" )
+				{
+					$trackbytestotal = format_number($system{$tracking}{bytestotal});
+				}
+
+				my $time = localtime( $system{$tracking}{updated} );
+				my $currenttime = time();
+				my $time_diff = $currenttime - $system{$tracking}{updated};
+				my $hours = floor($time_diff / 3600);
+				my $leftovers = $time_diff % 3600;
+				my $minutes = floor($leftovers / 60);
+				my $seconds = $time_diff % 60;
+				if( $hours < 10 ) { $hours = "0" . $hours; }
+				if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+				if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+				$tracklastupdate = "$hours:$minutes:$seconds ago";
+
+				# pause
+				if( $system{$tracking}{control} eq "running" )
+				{
+					$trackctrlrun = "<a href=\"control.html?action=pause&scanname=$scanname&system=$tracking\">Pause</a>";
+				}
+				# resume
+				if( $system{$tracking}{control} eq "stopped" )
+				{
+					$trackctrlstop = "<a href=\"control.html?action=resume&scanname=$scanname&system=$tracking\">Resume</a>";
+				}
+				# uninstall
+				if( $system{$tracking}{control} =~ /^(stopped|running)$/i )
+				{
+					$trackctrlunin = "<a href=\"control.html?action=uninstall&scanname=$scanname&system=$tracking\">Uninstall</a>";
+				}
+
+				my $rounded = "";
+				if( $system{$tracking}{status} > 1 )
+				{
+					if( $system{$tracking}{status} != 3 )
+					{
+						my $percent = 100 * $system{$tracking}{bytesdone} / $system{$tracking}{bytestotal};
+						$rounded = sprintf( "%.2f", $percent );
+					}
+					else
+					{
+						$rounded = "100";
+					}
+					$width = 2 * $rounded;
+					$width = floor( $width );
+				}
+
+				if( $system{$tracking}{status} > 1 )
+				{
+					$trackremainprogress = "$rounded\% done";
+	
+					if( $system{$tracking}{status} != 3 )
+					{
+						my $string = "SELECT updated FROM logs WHERE tracker=? ORDER BY updated LIMIT 1";
+						$sth = $dbh->prepare( $string );
+						$sth->execute( $tracking );
+						my $results = $sth->fetchrow_arrayref();
+						my $starttime = $$results[0];
+						$sth->finish();
+						my $currenttime = time();
+						my $difftime = $currenttime - $starttime;
+						my $eta = ($difftime / ($rounded / 100 )) - $difftime;
+						$eta = floor( $eta );
+						my $hours = floor( $eta / 3600 );
+						my $leftovers = $eta % 3600;
+						my $minutes = floor( $leftovers / 60 );
+						$seconds = $eta % 60;
+						if( $hours < 10 ) { $hours = "0" . $hours; }
+						if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+						if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+						$trackremainprogress .= ", approx $hours:$minutes:$seconds remaining";
+					}
+				}
+				my %list_element = (tracking => $tracking,
+                                    tracking_system => $system{$tracking}{system},
+                                    tracking_ip => $system{$tracking}{ip},
+                                    tracking_control => $system{$tracking}{control},
+                                    tracking_status => $trackstatus,
+                                    tracking_filesdone => $trackfilesdone,
+                                    tracking_filestotal => $trackfilestotal,
+                                    tracking_bytesdone => $trackbytesdone,
+                                    tracking_bytestotal => $trackbytestotal,
+                                    tracking_time => $tracklastupdate,
+                                    tracking_count => $system{$tracking}{count},
+                                    tracking_running => $trackctrlrun,
+                                    tracking_stopped => $trackctrlstop,
+                                    tracking_uninstalled => $trackctrlunin,
+                                    tracking_stateok => "1",
+                                    tracking_progress => $width,
+                                    tracking_roundedprogress => $trackremainprogress);
+                if($system{$tracking}{status} <= 1)
+                {
+                    delete $list_element{tracking_progress};
+                    delete $list_element{tracking_roundedprogress};
+                    delete $list_element{tracking_stateok};
+                }
+				push @output_list, \%list_element;
+			}
+			$view_template->param(tableA => "1");
+			$view_template->param(output_list => \@output_list);
+		}
+		elsif( $scantype eq "win_share" )
+		{
+            $view_template->param(instructions => "Select a system to view its results for scan \"$scanname\":");
+            $view_template->param(scanname => $scanname);
+			my @output_list = ();
+
+			foreach my $tracking( sort( keys( %system )))
+			{
+				my $string = "SELECT COUNT(*) FROM results WHERE scan=? AND tracker=?";
+				$sth = $dbh->prepare( $string );
+				$sth->execute( $scanname, $tracking );
+				my $results = $sth->fetchrow_arrayref();
+				$system{$tracking}{count} = $$results[0];
+				$sth->finish();
+
+				my $trackfilesdone = "N/A";
+				my $trackfilestotal = "N/A";
+				my $trackbytesdone = "N/A";
+				my $trackbytestotal = "N/A";
+				my $tracklastupdate = "";
+				my $trackctrlrun = "N/A";
+				my $trackctrlstop = "N/A";
+				my $trackctrlunin = "N/A";
+				my $width = "";
+				my $trackremainprogress = "";
+				my $trackstatus = "-1: Deploying";
+
+				if ( $system{$tracking}{status} == 0 ){ $trackstatus = "0: All files";}
+				elsif( $system{$tracking}{status} == 1 ){ $trackstatus = "1: Whitelisting";}
+				elsif( $system{$tracking}{status} == 2 ){ $trackstatus = "2: Scanning";}
+				elsif( $system{$tracking}{status} == 3 ){ $trackstatus = "3: Done";}
+
+				if( $system{$tracking}{filesdone} ne "" )
+				{
+					$trackfilesdone = format_number($system{$tracking}{filesdone});
+				}
+				if( $system{$tracking}{filestotal} ne "" )
+				{
+					$trackfilestotal = format_number($system{$tracking}{filestotal});
+                }
+				if( $system{$tracking}{bytesdone} ne "" )
+				{
+					$trackbytesdone = format_number($system{$tracking}{bytesdone});
+				}
+				if( $system{$tracking}{bytestotal} ne "" )
+				{
+					$trackbytestotal = format_number($system{$tracking}{bytestotal});
+				}
+
+				my $time = localtime( $system{$tracking}{updated} );
+				my $currenttime = time();
+				my $time_diff = $currenttime - $system{$tracking}{updated};
+				my $hours = floor($time_diff / 3600);
+				my $leftovers = $time_diff % 3600;
+				my $minutes = floor($leftovers / 60);
+				my $seconds = $time_diff % 60;
+				if( $hours < 10 ) { $hours = "0" . $hours; }
+				if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+				if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+				$tracklastupdate = "$hours:$minutes:$seconds ago";
+
+				# pause
+				if( $system{$tracking}{control} eq "running" )
+				{
+					$trackctrlrun = "<a href=\"control.html?action=pause&scanname=$scanname&system=$tracking\">Pause</a>";
+				}
+				# resume
+				if( $system{$tracking}{control} eq "stopped" )
+				{
+					$trackctrlstop = "<a href=\"control.html?action=resume&scanname=$scanname&system=$tracking\">Resume</a>";
+				}
+				# uninstall
+				if( $system{$tracking}{control} =~ /^(stopped|running)$/i )
+				{
+					$trackctrlunin = "<a href=\"control.html?action=uninstall&scanname=$scanname&system=$tracking\">Uninstall</a>";
+				}
+
+				my $rounded = "";
+				if( $system{$tracking}{status} > 1 )
+				{
+					if( $system{$tracking}{status} != 3 )
+					{
+						my $percent = 100 * $system{$tracking}{bytesdone} / $system{$tracking}{bytestotal};
+						$rounded = sprintf( "%.2f", $percent );
+					}
+					else
+					{
+						$rounded = "100";
+					}
+					$width = 2 * $rounded;
+					$width = floor( $width );
+				}
+
+				if( $system{$tracking}{status} > 1 )
+				{
+					$trackremainprogress = "$rounded\% done";
+	
+					if( $system{$tracking}{status} != 3 )
+					{
+						my $string = "SELECT updated FROM logs WHERE tracker=? ORDER BY updated LIMIT 1";
+						$sth = $dbh->prepare( $string );
+						$sth->execute( $tracking );
+						my $results = $sth->fetchrow_arrayref();
+						my $starttime = $$results[0];
+						$sth->finish();
+						my $currenttime = time();
+						my $difftime = $currenttime - $starttime;
+						my $eta = ($difftime / ($rounded / 100 )) - $difftime;
+						$eta = floor( $eta );
+						my $hours = floor( $eta / 3600 );
+						my $leftovers = $eta % 3600;
+						my $minutes = floor( $leftovers / 60 );
+						$seconds = $eta % 60;
+						if( $hours < 10 ) { $hours = "0" . $hours; }
+						if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+						if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+						$trackremainprogress .= ", approx $hours:$minutes:$seconds remaining";
+					}
+				}
+
+				my %list_element = (tracking => $tracking,
+                                    tracking_system => $system{$tracking}{system},
+                                    tracking_ip => $system{$tracking}{ip},
+                                    tracking_control => $system{$tracking}{control},
+                                    tracking_status => $trackstatus,
+                                    tracking_filesdone => $trackfilesdone,
+                                    tracking_filestotal => $trackfilestotal,
+                                    tracking_bytesdone => $trackbytesdone,
+                                    tracking_bytestotal => $trackbytestotal,
+                                    tracking_time => $tracklastupdate,
+                                    tracking_count => $system{$tracking}{count},
+                                    tracking_running => $trackctrlrun,
+                                    tracking_stopped => $trackctrlstop,
+                                    tracking_uninstalled => $trackctrlunin,
+                                    tracking_stateok => "1",
+                                    tracking_progress => $width,
+                                    tracking_roundedprogress => $trackremainprogress);
+                if($system{$tracking}{status} <= 1)
+                {
+                    delete $list_element{tracking_progress};
+                    delete $list_element{tracking_roundedprogress};
+                    delete $list_element{tracking_stateok};
+                }
+				push @output_list, \%list_element;
+			}
+			$view_template->param(tableA => "1");
+			$view_template->param(output_list => \@output_list);
+		}
+		elsif( $scantype eq "unix_agentless" )
+		{
+            $view_template->param(instructions => "Select a system to view its results for scan \"$scanname\":");
+            $view_template->param(scanname => $scanname);
+			my @output_list = ();
+
+			foreach my $tracking( sort( keys( %system )))
+			{
+				my $string = "SELECT COUNT(*) FROM results WHERE scan=? AND tracker=?";
+				$sth = $dbh->prepare( $string );
+				$sth->execute( $scanname, $tracking );
+				my $results = $sth->fetchrow_arrayref();
+				$system{$tracking}{count} = $$results[0];
+				$sth->finish();
+
+				my $trackfilesdone = "N/A";
+				my $trackfilestotal = "N/A";
+				my $trackbytesdone = "N/A";
+				my $trackbytestotal = "N/A";
+				my $tracklastupdate = "";
+				my $trackctrlrun = "N/A";
+				my $trackctrlstop = "N/A";
+				my $trackctrlunin = "N/A";
+				my $width = "";
+				my $trackremainprogress = "";
+				my $trackstatus = "-1: Deploying";
+				
+				if ( $system{$tracking}{status} == 0 ){ $trackstatus = "0: All files";}
+				elsif( $system{$tracking}{status} == 1 ){ $trackstatus = "1: Whitelisting";}
+				elsif( $system{$tracking}{status} == 2 ){ $trackstatus = "2: Scanning";}
+				elsif( $system{$tracking}{status} == 3 ){ $trackstatus = "3: Done";}
+
+				if( $system{$tracking}{filesdone} ne "" )
+				{
+					$trackfilesdone = format_number($system{$tracking}{filesdone});
+				}
+				if( $system{$tracking}{filestotal} ne "" )
+				{
+					$trackfilestotal = format_number($system{$tracking}{filestotal});
+                }
+				if( $system{$tracking}{bytesdone} ne "" )
+				{
+					$trackbytesdone = format_number($system{$tracking}{bytesdone});
+				}
+				if( $system{$tracking}{bytestotal} ne "" )
+				{
+					$trackbytestotal = format_number($system{$tracking}{bytestotal});
+				}
+
+				my $time = localtime( $system{$tracking}{updated} );
+				my $currenttime = time();
+				my $time_diff = $currenttime - $system{$tracking}{updated};
+				my $hours = floor($time_diff / 3600);
+				my $leftovers = $time_diff % 3600;
+				my $minutes = floor($leftovers / 60);
+				my $seconds = $time_diff % 60;
+				if( $hours < 10 ) { $hours = "0" . $hours; }
+				if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+				if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+				$tracklastupdate = "$hours:$minutes:$seconds ago";
+
+				# pause
+				if( $system{$tracking}{control} eq "running" )
+				{
+					$trackctrlrun = "<a href=\"control.html?action=pause&scanname=$scanname&system=$tracking\">Pause</a>";
+				}
+				# resume
+				if( $system{$tracking}{control} eq "stopped" )
+				{
+					$trackctrlstop = "<a href=\"control.html?action=resume&scanname=$scanname&system=$tracking\">Resume</a>";
+				}
+				# uninstall
+				if( $system{$tracking}{control} =~ /^(stopped|running)$/i )
+				{
+					$trackctrlunin = "<a href=\"control.html?action=uninstall&scanname=$scanname&system=$tracking\">Uninstall</a>";
+				}
+
+				my $rounded = "";
+				if( $system{$tracking}{status} > 1 )
+				{
+					if( $system{$tracking}{status} != 3 )
+					{
+						my $percent = 100 * $system{$tracking}{bytesdone} / $system{$tracking}{bytestotal};
+						$rounded = sprintf( "%.2f", $percent );
+					}
+					else
+					{
+						$rounded = "100";
+					}
+					$width = 2 * $rounded;
+					$width = floor( $width );
+				}
+
+				if( $system{$tracking}{status} > 1 )
+				{
+					$trackremainprogress = "$rounded\% done";
+	
+					if( $system{$tracking}{status} != 3 )
+					{
+						my $string = "SELECT updated FROM logs WHERE tracker=? ORDER BY updated LIMIT 1";
+						$sth = $dbh->prepare( $string );
+						$sth->execute( $tracking );
+						my $results = $sth->fetchrow_arrayref();
+						my $starttime = $$results[0];
+						$sth->finish();
+						my $currenttime = time();
+						my $difftime = $currenttime - $starttime;
+						my $eta = ($difftime / ($rounded / 100 )) - $difftime;
+						$eta = floor( $eta );
+						my $hours = floor( $eta / 3600 );
+						my $leftovers = $eta % 3600;
+						my $minutes = floor( $leftovers / 60 );
+						$seconds = $eta % 60;
+						if( $hours < 10 ) { $hours = "0" . $hours; }
+						if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+						if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+						$trackremainprogress .= ", approx $hours:$minutes:$seconds remaining";
+					}
+				}
+
+				my %list_element = (tracking => $tracking,
+                                    tracking_system => $system{$tracking}{system},
+                                    tracking_ip => $system{$tracking}{ip},
+                                    tracking_control => $system{$tracking}{control},
+                                    tracking_status => $trackstatus,
+                                    tracking_filesdone => $trackfilesdone,
+                                    tracking_filestotal => $trackfilestotal,
+                                    tracking_bytesdone => $trackbytesdone,
+                                    tracking_bytestotal => $trackbytestotal,
+                                    tracking_time => $tracklastupdate,
+                                    tracking_count => $system{$tracking}{count},
+                                    tracking_running => $trackctrlrun,
+                                    tracking_stopped => $trackctrlstop,
+                                    tracking_uninstalled => $trackctrlunin,
+                                    tracking_stateok => "1",
+                                    tracking_progress => $width,
+                                    tracking_roundedprogress => $trackremainprogress);
+                if($system{$tracking}{status} <= 1)
+                {
+                    delete $list_element{tracking_progress};
+                    delete $list_element{tracking_roundedprogress};
+                    delete $list_element{tracking_stateok};
+                }
+				push @output_list, \%list_element;
+			}
+			$view_template->param(tableA => "1");
+			$view_template->param(output_list => \@output_list);
+		}
+		elsif( $scantype =~ /^(mssql_agentless|mysql_agentless)$/ )
+		{
+            $view_template->param(instructions => "Select a database to view its results for scan \"$scanname\":");
+			$view_template->param(scanname => $scanname);
+			my @output_list = ();
+#			print "Select a database to view its results for scan \"$scanname\":<br><br>\n";
+#			print "<form method=GET action=viewresults.html>\n";
+#			print "<input type=hidden name=scanname value=\"$scanname\">\n";
+#			print "<table class=sample>\n";
+#			print "<tr><td><br></td><td>IP address</td><td>Status</td><td>Step</td><td>Databases done</td><td>Total databases</td><td>Tables done</td><td>Total tables</td><td>Columns done</td><td>Total columns</td><td>Updated</td><td>Findings</td><td>Pause</td><td>Resume</td><td>Uninstall</td></tr>\n";
+
+			foreach my $tracking( sort( keys( %system )))
+			{
+				my $string = "SELECT COUNT(*) FROM results WHERE scan=? AND tracker=?";
+				$sth = $dbh->prepare( $string );
+				$sth->execute( $scanname, $tracking );
+				my $results = $sth->fetchrow_arrayref();
+				$system{$tracking}{count} = $$results[0];
+				$sth->finish();
+
+				my $trackdbdone = "N/A";
+				my $trackdbtotal = "N/A";
+				my $tracktabledone = "N/A";
+				my $tracktabletotal = "N/A";
+				my $trackcoldone = "N/A";
+				my $trackcoltotal = "N/A";
+				my $tracklastupdate = "";
+				my $trackctrlrun = "N/A";
+				my $trackctrlstop = "N/A";
+				my $trackctrlunin = "N/A";
+				my $width = "";
+				my $trackremainprogress = "";
+				my $trackstatus = "-1: Deploying";
+
+				if ( $system{$tracking}{status} == 0 ){ $trackstatus = "0: All files";}
+				elsif( $system{$tracking}{status} == 1 ){ $trackstatus = "1: Whitelisting";}
+				elsif( $system{$tracking}{status} == 2 ){ $trackstatus = "2: Scanning";}
+				elsif( $system{$tracking}{status} == 3 ){ $trackstatus = "3: Done";}
+
+#				print "\n<tr><td rowspan=2><input type=radio name=system value=$tracking></td>\n";
+#				print "<td>$system{$tracking}{ip}</td>\n";
+#				print "<td>$system{$tracking}{control}</td>\n";
+#				if( $system{$tracking}{status} == -1 ) { print "<td>-1: Deploying</td>\n"; }
+#				elsif( $system{$tracking}{status} == 0 ) { print "<td>0: All files</td>\n"; }
+#				elsif( $system{$tracking}{status} == 1 ) { print "<td>1: Whitelisting</td>\n"; }
+#				elsif( $system{$tracking}{status} == 2 ) { print "<td>2: Scanning</td>\n"; }
+#				elsif( $system{$tracking}{status} == 3 ) { print "<td>3: Done</td>\n"; }
+
+				if( $system{$tracking}{dbdone} ne "" )
+				{
+					#print "<td align=right>" . commify($system{$tracking}{dbdone}) . "</td>\n";
+					$trackdbdone = format_number($system{$tracking}{dbdone});
+				}
+#				else
+#				{
+#					print "<td align=right>N/A</td>\n";
+#				}
+				if( $system{$tracking}{dbtotal} ne "" )
+				{
+					#print "<td align=right>" . commify($system{$tracking}{dbtotal}) . "</td>\n";
+					$trackdbtotal = format_number($system{$tracking}{dbtotal});
+				}
+#				else
+#				{
+#					print "<td align=right>N/A</td>\n";
+#				}
+
+				if( $system{$tracking}{tabledone} ne "" )
+				{
+					#print "<td align=right>" . commify($system{$tracking}{tabledone}) . "</td>\n";
+					$tracktabledone = format_number($system{$tracking}{tabledone});
+				}
+#				else
+#				{
+#					print "<td align=right>N/A</td>\n";
+#				}
+				if( $system{$tracking}{tabletotal} ne "" )
+				{
+					#print "<td align=right>" . commify($system{$tracking}{tabletotal}) . "</td>\n";
+					$tracktabletotal = format_number($system{$tracking}{tabletotal});
+				}
+#				else
+#				{
+#					print "<td align=right>N/A</td>\n";
+#				}
+
+				if( $system{$tracking}{columndone} ne "" )
+				{
+					#print "<td align=right>" . commify($system{$tracking}{columndone}) . "</td>\n";
+					$trackcoldone = format_number($system{$tracking}{columndone});
+				}
+#				else
+#				{
+#					print "<td align=right>N/A</td>\n";
+#				}
+				if( $system{$tracking}{columntotal} ne "" )
+				{
+					#print "<td align=right>" . commify($system{$tracking}{columntotal}) . "</td>\n";
+					$trackcoltotal = format_number($system{$tracking}{columntotal});
+				}
+#				else
+#				{
+#					print "<td align=right>N/A</td>\n";
+#				}
+
+				my $time = localtime( $system{$tracking}{updated} );
+				my $currenttime = time();
+				my $time_diff = $currenttime - $system{$tracking}{updated};
+				my $hours = floor($time_diff / 3600);
+				my $leftovers = $time_diff % 3600;
+				my $minutes = floor($leftovers / 60);
+				my $seconds = $time_diff % 60;
+				if( $hours < 10 ) { $hours = "0" . $hours; }
+				if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+				if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+#				print "<td>$hours:$minutes:$seconds ago</td>\n";
+#				print "<td align=right>$system{$tracking}{count}</td>\n";
+                $tracklastupdate = "$hours:$minutes:$seconds ago";
+
+				# pause
+				if( $system{$tracking}{control} eq "running" )
+				{
+					#print "<td><a href=\"control.html?action=pause&scanname=$scanname&system=$tracking\">Pause</a></td>\n";
+                    $trackctrlrun = "<a href=\"control.html?action=pause&scanname=$scanname&system=$tracking\">Pause</a>";
+				}
+#				else
+#				{
+#					print "<td>N/A</td>\n";
+#				}
+
+				# resume
+				if( $system{$tracking}{control} eq "stopped" )
+				{
+					#print "<td><a href=\"control.html?action=resume&scanname=$scanname&system=$tracking\">Resume</a></td>\n";
+					$trackctrlstop = "<a href=\"control.html?action=resume&scanname=$scanname&system=$tracking\">Resume</a>";
+				}
+#				else
+#				{
+#					print "<td>N/A</td>\n";
+#				}
+
+				# uninstall
+				if( $system{$tracking}{control} =~ /^(stopped|running)$/i )
+				{
+					#print "<td><a href=\"control.html?action=uninstall&scanname=$scanname&system=$tracking\">Uninstall</a></td>\n";
+					$trackctrlunin = "<a href=\"control.html?action=uninstall&scanname=$scanname&system=$tracking\">Uninstall</a>";
+				}
+#				else
+#				{
+#					print "<td>N/A</td>\n";
+#				}
+
+#				print "</tr>\n";
+#				print "<tr><td colspan=4><br></td>\n";
+#				print "<td colspan=5>\n";
+				my $rounded = "";
+				if( $system{$tracking}{status} > 1 )
+				{
+					if( $system{$tracking}{status} != 3 )
+					{
+						my $percent = 100 * $system{$tracking}{columndone} / $system{$tracking}{columntotal};
+						$rounded = sprintf( "%.2f", $percent );
+					}
+					else
+					{
+						$rounded = "100";
+					}
+					$width = 2 * $rounded;
+					$width = floor( $width );
+					#print "<table class=sample width=206><tr><td>\n";
+					#print "<img src=\"images/red.gif\" width=\"$width\" height=\"10\">\n";
+					#print "</td></tr></table>\n";
+				}
+#				else
+#				{
+#					print "<br>";
+#				}
+#				print "</td><td colspan=5>";
+				if( $system{$tracking}{status} > 1 )
+				{
+					#print "$rounded\% done";
+					$trackremainprogress = "$rounded\% done";
+	
+					if( $system{$tracking}{status} != 3 )
+					{
+						my $string = "SELECT updated FROM logs WHERE tracker=? ORDER BY updated LIMIT 1";
+						$sth = $dbh->prepare( $string );
+						$sth->execute( $tracking );
+						my $results = $sth->fetchrow_arrayref();
+						my $starttime = $$results[0];
+						$sth->finish();
+						my $currenttime = time();
+						my $difftime = $currenttime - $starttime;
+						my $eta = ($difftime / ($rounded / 100 )) - $difftime;
+						$eta = floor( $eta );
+						my $hours = floor( $eta / 3600 );
+						my $leftovers = $eta % 3600;
+						my $minutes = floor( $leftovers / 60 );
+						$seconds = $eta % 60;
+						if( $hours < 10 ) { $hours = "0" . $hours; }
+						if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+						if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+						#print ", approx $hours:$minutes:$seconds remaining";
+						$trackremainprogress .= ", approx $hours:$minutes:$seconds remaining";
+					}
+				}
+#				else
+#				{
+#					print "<br>\n";
+#				}
+#				print "</td>\n";
+#				print "</tr>\n";
+                my %list_element = (tracking => $tracking,
+                                    tracking_ip => $system{$tracking}{ip},
+                                    tracking_control => $system{$tracking}{control},
+                                    tracking_status => $trackstatus,
+                                    tracking_dbdone => $trackdbdone,
+                                    tracking_dbtotal => $trackdbtotal,
+                                    tracking_tabledone => $tracktabledone,
+                                    tracking_tabletotal => $tracktabletotal,
+                                    tracking_coldone => $trackcoldone,
+                                    tracking_coltotal => $trackcoltotal,
+                                    tracking_time => $tracklastupdate,
+                                    tracking_count => $system{$tracking}{count},
+                                    tracking_running => $trackctrlrun,
+                                    tracking_stopped => $trackctrlstop,
+                                    tracking_uninstalled => $trackctrlunin,
+                                    tracking_stateok => "1",
+                                    tracking_progress => $width,
+                                    tracking_roundedprogress => $trackremainprogress);
+                if($system{$tracking}{status} <= 1)
+                {
+                    delete $list_element{tracking_progress};
+                    delete $list_element{tracking_roundedprogress};
+                    delete $list_element{tracking_stateok};
+                }
+				push @output_list, \%list_element;
+			}
+			$view_template->param(tableB => "1");
+			$view_template->param(output_list => \@output_list);
+#			print "<tr><td colspan=15><input type=submit value=\"View Results\"></td></tr></table>\n";
+		}
+
+        print "Content-type: text/html\n\n", $view_template->output;
+		$dbh->disconnect();
+	}
+
+	######################################
+	# look at details of specific system #
+	######################################
+	elsif( $scanname ne "" && $system ne "" )
+	{
+		my $dbh = DBI->connect("DBI:mysql:database=OpenDLP;host=localhost",$db_username,$db_password);
+		my $string = "SELECT system,ip,status,filestotal,filesdone,bytestotal,bytesdone,updated,profile,control,scantype,pid,dbtotal,dbdone,tabletotal,tabledone,columntotal,columndone,sessionid FROM systems WHERE scan=? AND tracker=?";
+		my $sth = $dbh->prepare( $string );
+		$sth->execute( $scanname, $system );
+		#########################
+        #new: Josh - June 17 2018 TODO check...
+        #########################
+        my $results		= $sth->fetchrow_hashref();
+        my $hostname	= $results->{"system"};
+        my $ip		    = $results->{"ip"};
+        my $status		= $results->{"status"};
+        my $filestotal	= $results->{"filestotal"};
+        my $filesdone	= $results->{"filesdone"};
+        my $bytestotal	= $results->{"bytestotal"};
+        my $bytesdone	= $results->{"bytesdone"};
+        my $updated		= $results->{"updated"};
+        my $profile		= $results->{"profile"};
+        my $control		= $results->{"control"};
+        $scantype		= $results->{"scantype"};
+        my $pid		    = $results->{"pid"};
+        my $dbtotal		= $results->{"dbtotal"};
+        my $dbdone		= $results->{"dbdone"};
+        my $tabletotal	= $results->{"tabletotal"};
+        my $tabledone	= $results->{"tabledone"};
+        my $columntotal	= $results->{"columntotal"};
+        my $columndone	= $results->{"columndone"};
+        my $sessionid 	= $results->{"sessionid"};
+
+		$sth->finish();
+
+		my $string = "SELECT COUNT(*) FROM results WHERE scan=? AND tracker=?";
+		$sth = $dbh->prepare( $string );
+		$sth->execute( $scanname, $system );
+		my $results = $sth->fetchrow_arrayref();
+		my $total = $$results[0];
+		$sth->finish();
+
+		my $string = "SELECT COUNT(*) FROM results WHERE scan=? AND tracker=? AND is_false=\"1\"";
+		$sth = $dbh->prepare( $string );
+		$sth->execute( $scanname, $system );
+		my $results = $sth->fetchrow_arrayref();
+		my $fp_count = $$results[0];
+		$sth->finish();
+
+		if( $scantype eq "win_agent" || $scantype eq "meta_agent" || $scantype eq "post_agent")
+		{
+            #########################
+            #new: Josh - June 17 2018
+            #########################
+            my $view_template = HTML::Template->new(filename => 'viewresults_viewC.tmpl');
+            $view_template->param(opendlpversion => $version);
+            $view_template->param(usetable_a => "1");
+            $view_template->param(useform_a => "1");
+        
+		  if ($scantype eq "meta_agent"  || $scantype eq "post_agent")
+		  { # TODO check...
+		    #print "Results for session $sessionid ($ip - $hostname ):<br>\n";
+		    $view_template->param(resultheading_hostname => "Results for session $sessionid ($ip - $hostname ):");
+
+		    #Check to see if the session is current. If not, offer the option of updating the session!
+
+		    #First, load metasploit credentials from profile.
+	      my $string = "SELECT metauser,metapass,metahost,metaport,metapath,metalatency,metatimeout,metassl from profiles where profile=?";
+        $sth = $dbh->prepare( $string );			         
+        $sth->execute( $profile );
+        #my $mresults = $sth->fetchrow_arrayref();
+        my $mresults = $sth->fetchrow_hashref();
+        $sth->finish();
+        
+        # TODO check...
+        my $metauser    = $mresults->{"metauser"};
+        my $metapass    = $mresults->{"metapass"};
+        my $metahost    = $mresults->{"metahost"};
+        my $metaport    = $mresults->{"metaport"};
+        my $metapath    = $mresults->{"metapath"};
+        my $metalatency = $mresults->{"metalatency"};
+        my $metatimeout = $mresults->{"metatimeout"};
+        my $metassl     = $mresults->{"metassl"};
+
+        my $metaSploiter = MetaSploiter->new();			
+        $metaSploiter->SetLatency($metalatency); 
+        $metaSploiter->SetTimeout($metatimeout);
+        $ret_code = $metaSploiter->MetaLogin($metahost, $metaport, $metauser,  $metapass, $metassl);
+                
+        $metaSploiter->MeterpreterRead($sessionid); # Eat anything in the buffer.
+        
+        if ($ret_code == 0 && $metaSploiter->CheckForArmitage() == 1) {
+#          print qq{
+#            <BR><table border=3 cellspacing=3 cellpadding=3><tr><td>
+#            <font color=red><font size=+1><b>WARNING: ARMITAGE DETECTED.</b></font><BR><BR>
+#            Armitage and OpenDLP cannot be used on the same session at the same time.<BR>
+#            When managing OpenDLP through the Metasploit Bridge, do not interact with <BR>
+#            the session through Armitage, or downloading the files below may fail.<BR></font></td></tr></table><BR>
+#          };
+            $view_template->param(armitage_detected => "1");
+        }
+        #first, see if the session exists
+        if ($ret_code == 0) {
+          $ret_code = $metaSploiter->ChangeLocalPath($sessionid, $metapath);
+        }        
+        if ($ret_code) { #if not, error.
+          if ($metaSploiter->GetLastError() =~/unknown\ session\ while\ validating/ ||
+              $metaSploiter->GetLastError() =~/unknown\ session\ id/i) {
+            $view_template->param(metasploiter_gotlasterror => "1");
+            $view_template->param(metasploiter_err_profile => $profile);
+            $view_template->param(metasploiter_err_orgid => $sessionid);
+            $view_template->param(metasploiter_err_hostname => $hostname);
+            $view_template->param(metasploiter_err_ip => $ip);
+            $view_template->param(metasploiter_err_tracker => $system);
+            $view_template->param(metasploiter_err_scanname => $scanname);
+#            print qq{
+#              <BR>
+#              <table class=sample><tr><td>
+#              <font color=red>It appears that session $sessionid has died. You will be unable to download files.<BR>
+#              Press the button below to review the current Metasploit session list and <BR>update the session id for this system.</font>
+#              <form action=updatesessionid.html method=POST>
+#              <input type=hidden name="profile"     value="$profile">
+#              <input type=hidden name="originalId"  value="$sessionid">
+#              <input type=hidden name="hostname"    value="$hostname">
+#              <input type=hidden name="ip"          value="$ip">              
+#              <input type=hidden name="tracker"     value="$system">
+#              <input type=hidden name="scanname"    value="$scanname">
+#              <BR>
+#              <center><input type=submit value='Update Session Id'></center>
+#              </form></td></tr></table>
+#              <BR>
+#            };
+          } else {
+          $view_template->param(metasploiter_unknownerror => "1");
+          $view_template->param(metasploiter_err_detail => $metaSploiter->GetLastError());
+            #print "<font color=red>Unable to connect to metasploit, you will not be able to download files.</font><BR>\n";
+            #print "<font color=red>(Error detail: " . $metaSploiter->GetLastError() . ")</font><BR><BR>\n";
+          }
+        } else {
+          #if the session exists that's nice, but make sure it's still tied to the same target.
+          $metaSploiter->ListSessions();
+          my @sessionList = $metaSploiter->GetSessionList();
+    
+          my $foundHost = "";
+          my $foundHostname = "";
+          foreach my $session(@sessionList) {                       
+            if ($session->sessionName eq $sessionid) { 
+              #$foundHost = $session->target_host;
+              $foundHost = getIpFromPeer($session->tunnel_peer);
+              $foundHostname = $session->info;
+              last;
+            }            
+          }
+          if ($foundHost ne $ip) {
+          $view_template->param(metasploiter_foundhost => "1");
+          $view_template->param(metasploiter_sessionid => $sessionid);
+          $view_template->param(metasploiter_ip => $ip);
+          $view_template->param(metasploiter_hostname => $hostname);
+          $view_template->param(metasploiter_foundHost => $foundHost);
+          $view_template->param(metasploiter_foundHostname => $foundHostname);
+          $view_template->param(metasploiter_profile => $profile);
+          $view_template->param(metasploiter_hostname => $hostname);
+          $view_template->param(metasploiter_system => $system);
+          $view_template->param(metasploiter_scanname => $scanname);
+#            print qq{
+#              <BR>
+#              <table class=sample><tr><td>
+#              <font color=red>It appears that session $sessionid is pointing to a different machine. </font><BR><BR>
+#              <i>
+#              The original machine was: $ip ($hostname). <BR>
+#              Session $sessionid is currently pointing to: $foundHost ($foundHostname).<BR>      </i>
+#              <BR>
+#              <font color=red>Because of this mismatch, you will be unable to download any files. <BR>
+#              Press the button below to review the current Metasploit session list and update the <BR>
+#              session id for this system.</font>
+#              <form action=updatesessionid.html method=POST>
+#              <input type=hidden name="profile"     value="$profile">
+#              <input type=hidden name="originalId"  value="$sessionid">
+#              <input type=hidden name="hostname"    value="$hostname">
+#              <input type=hidden name="ip"          value="$ip">              
+#              <input type=hidden name="tracker"     value="$system">
+#              <input type=hidden name="scanname"    value="$scanname">
+#              <BR>
+#              <center><input type=submit value='Update Session Id'></center>
+#              </form></td></tr></table>
+#              <BR>
+#            };  
+
+          } 
+        }
+        #print "<BR>\n";        
+        }
+        else
+        {
+            #########################
+            #new: Josh - June 17 2018
+            #########################
+            if($hostname ne "")
+            {
+                $view_template->param(resultheading_hostname => "Results for $ip ($hostname):");
+            }
+            else
+            {
+                $view_template->param(resultheading_hostname => $ip);
+            }
+
+			#  print "Results for $ip";
+			#  if( $hostname ne "" ) {
+  			#	print " ($hostname)";
+	  		#}
+	  		#print ":<br><br>\n";
+	  	}			
+
+            #########################
+            #new: Josh - June 17 2018
+            #########################
+			#print "<table class=sample>\n";
+			$view_template->param(resultheading_profilename => $profile);
+			$view_template->param(resultheading_scanstatus => $control);
+			
+			my $steptext = "$status: ";
+			if($status == -1) { $steptext .= "Deploying"; }
+			elsif ($status == 0) { $steptext .= "All files"; }
+			elsif ($status == 1) { $steptext .= "Whitelisting"; }
+			elsif ($status == 2) { $steptext .= "Scanning"; }
+			elsif ($status == 3) { $steptext .= "Done"; }
+			$view_template->param(resultheading_scanstep => $steptext);
+			
+			#print "<tr><td>Profile</td><td align=right>$profile</td></tr>\n";
+			#print "<tr><td>Status</td><td align=right>$control</td></tr>\n";
+			#print "<tr><td>Step</td><td align=right>\n";
+			#if( $status == -1 ) { print "-1: Deploying\n"; }
+			#elsif( $status == 0 ) { print "0: All files\n"; }
+			#elsif( $status == 1 ) { print "1: Whitelisting\n"; }
+			#elsif( $status == 2 ) { print "2: Scanning\n"; }
+			#elsif( $status == 3 ) { print "3: Done\n"; }
+			#print "</td></tr>\n";
+			#print "<tr><td>Files Done</td>\n";
+			
+			if( $filesdone ne "" )
+			{
+				#print "<td align=right>" . commify($filesdone) . "</td></tr>\n";
+				#$view_template->param(resultheading_filesdone => commify($filesdone));
+				$view_template->param(resultheading_filesdone => commify($filesdone));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_filesdone => "N/A");
+			}
+			#print "<tr><td>Files Total</td>\n";
+			if( $filestotal ne "" )
+			{
+				#print "<td align=right>" . commify($filestotal) . "</td></tr>\n";
+				$view_template->param(resultheading_filestotal => commify($filestotal));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_filestotal => "N/A");
+			}
+			#print "<tr><td>Bytes Done</td>\n";
+			if( $bytesdone ne "" )
+			{
+				#print "<td align=right>" . commify($bytesdone) . "</td></tr>\n";
+				$view_template->param(resultheading_bytesdone => commify($bytesdone));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_bytesdone => "N/A");
+			}
+			#print "<tr><td>Bytes Total</td>\n";
+			if( $bytestotal ne "" )
+			{
+				#print "<td align=right>" . commify($bytestotal) . "</td></tr>\n";
+				$view_template->param(resultheading_bytestotal => commify($bytestotal));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_bytestotal => "N/A");
+			}
+
+			#print "<tr><td>Progress</td>\n";
+			#print "<td>\n";
+			my $rounded = "";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					my $percent = 100 * $bytesdone / $bytestotal;
+					$rounded = sprintf( "%.2f", $percent );
+				}
+				else
+				{
+					$rounded = "100";
+				}
+				my $width = 2 * $rounded;
+				$width = floor( $width );
+				$view_template->param(resultheading_progresspercentage => $width);
+				#print "<table class=sample width=206><tr><td>\n";
+				#print "<img src=\"images/red.gif\" width=\"$width\" height=\"10\">\n";
+				#print "</td></tr></table>\n";
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_progresspercentage => "1");
+			}
+			#print "</td></tr>\n";
+			#print "<tr><td>Percentage</td><td align=right>\n";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					#print $rounded;
+					$view_template->param(resultheading_percentage => "$rounded&#37;");
+				}
+				else
+				{
+					#print "100";
+					$view_template->param(resultheading_percentage => "100&#37;");
+				}
+				#print "\%";
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_percentage => "&nbsp;");
+			}
+			#print "</td></tr>\n";
+			#print "<tr><td>Completion Time</td><td align=right>";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					my $string = "SELECT updated FROM logs WHERE tracker=? ORDER BY updated LIMIT 1";
+					$sth = $dbh->prepare( $string );
+					$sth->execute( $system );
+					my $results = $sth->fetchrow_arrayref();
+					my $starttime = $$results[0];
+					$sth->finish();
+					my $currenttime = time();
+					my $difftime = $currenttime - $starttime;
+					my $eta = ($difftime / ($rounded / 100 )) - $difftime;
+					$eta = floor( $eta );
+					my $hours = floor( $eta / 3600 );
+					my $leftovers = $eta % 3600;
+					my $minutes = floor( $leftovers / 60 );
+					$seconds = $eta % 60;
+					if( $hours < 10 ) { $hours = "0" . $hours; }
+					if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+					if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+					#print "Approx $hours:$minutes:$seconds remaining";
+					$view_template->param(resultheading_completiontime => "Approx $hours:$minutes:$seconds remaining");
+				}
+				else
+				{
+					#print "<br>";
+					$view_template->param(resultheading_completiontime => "&nbsp;");
+				}
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_completiontime => "&nbsp;");
+			}
+			#print "</td>\n";
+			#print "</tr>\n";
+
+			$view_template->param(resultheading_totalfindings => $total);
+			$view_template->param(resultheading_fpcount => $fp_count);
+			#print "<tr><td>Total Findings</td><td align=right>$total</td></tr>\n";
+			#print "<tr><td>False Positives</td><td align=right>$fp_count</td></tr>\n";
+			my $diff = $total - $fp_count;
+			$view_template->param(resultheading_validfindings => $diff);
+			#print "<tr><td>Valid Findings</td><td align=right>$diff</td></tr>\n";
+			my $currenttime = time();
+			my $updatedtime = localtime( $updated );
+			my $timediff = $currenttime - $updated;
+			#print "<tr><td>Updated</td><td align=right>";
+			my $hours = floor($timediff / 3600);
+			my $leftovers = $timediff % 3600;
+			my $minutes = floor($leftovers / 60);
+			my $seconds = $timediff % 60;
+			if( $hours < 10 ) { $hours = "0" . $hours; }
+			if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+			if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+			#print "$hours:$minutes:$seconds ago</td></tr>\n";
+			$view_template->param(resultheading_updated => "$hours:$minutes:$seconds ago");
+
+			# pause
+			#print "<tr><td>Pause</td>\n";
+			if( $control eq "running" )
+			{
+				#print "<td align=right><a href=\"control.html?action=pause&scanname=$scanname&system=$system\">Pause</a></td></tr>\n";
+				$view_template->param(resultheading_pausectrl => "<a href=\"control.html?action=pause&scanname=$scanname&system=$system\">Pause</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_pausectrl => "N/A");
+			}
+
+			# resume
+			#print "<tr><td>Resume</td>\n";
+			if( $control eq "stopped" )
+			{
+				#print "<td align=right><a href=\"control.html?action=resume&scanname=$scanname&system=$system\">Resume</a></td></tr>\n";
+				$view_template->param(resultheading_resumectrl => "<a href=\"control.html?action=resume&scanname=$scanname&system=$system\">Resume</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_resumectrl => "N/A");
+			}
+
+			# uninstall
+			#print "<tr><td>Stop and Uninstall</td>\n";
+			$view_template->param(scanstop_flavortext => "Stop and Uninstall");
+			if( $control =~ /^(stopped|running)$/i )
+			{
+				#print "<td align=right><a href=\"control.html?action=uninstall&scanname=$scanname&system=$system\">Uninstall</a></td></tr>\n";
+				$view_template->param(resultheading_stopuninstall => "<a href=\"control.html?action=uninstall&scanname=$scanname&system=$system\">Uninstall</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_stopuninstall => "N/A");
+			}
+			#print "</table><br><br>\n";
+
+			$view_template->param(result_scansystem => $system);
+			$view_template->param(result_scanname => $scanname);
+			#print "<form method=POST action=results-fp.html>\n";
+			#print "<input type=hidden name=tracker value=\"$system\">\n";
+			#print "<input type=hidden name=scan value=\"$scanname\">\n";
+			#print "<table class=sample>\n";
+			#print "<tr><td>#</td>\n";
+			#print "<td>Regex</td>\n";
+			#print "<td>Pattern</td>\n";
+			#print "<td>File (click to download)</td>\n";
+			#print "<td>Byte offset</td>\n";
+			#print "<td>False?</td></tr>\n";
+
+			my $string = "SELECT DISTINCT type,pattern,file,offset,md5,number,is_false FROM results WHERE scan=? AND tracker=? AND is_false != \"1\" ORDER BY number";
+			my $sth = $dbh->prepare( $string );
+			$sth->execute( $scanname, $system );
+			my $row_counter = 1;
+			
+			# NEW: Josh
+			my @result_values = ();
+			#while( my $results = $sth->fetchrow_arrayref() )
+			while( my $results = $sth->fetchrow_hashref() )
+			{
+				my $type    = $results->{"type"};
+				my $pattern = $results->{"pattern"};
+				my $file    = $results->{"file"};
+				my $offset  = $results->{"offset"};
+				my $md5     = $results->{"md5"};
+				my $number  = $results->{"number"};
+
+				#print "<tr><td>$row_counter</td>\n";
+				#print "<td>$type</td>\n";
+				my $pattern_copy = replacechars( $pattern );
+				#print "<td>$pattern_copy</td>\n";
+				my $file_printme = $file;
+				$file_printme =~ s/\\\\/\\/g;
+				$file_printme = replacechars( $file_printme );
+				my $encode_file = encode_base64( $file );
+				$encode_file =~ s/\n//g;
+				my $encode_ip = encode_base64( $ip );
+				$encode_ip =~ s/\n//g;
+				my $encode_profile = encode_base64( $profile );
+				$encode_profile =~ s/\n//g;
+				
+				my %result_element = (  result_localcounter => $row_counter,
+                                        result_regexmatchname => $type,
+                                        result_regexmatchvalue => $pattern_copy,
+                                        result_filedownloadhref => "test2.html?file=$encode_file&ip=$encode_ip&profile=$encode_profile&sessionid=$sessionid",
+                                        result_popupwindowname => "test2",
+                                        result_filedownloadhreftext => $file_printme,
+                                        result_byteoffset => $offset,
+                                        result_number => $number);
+				push @result_values, \%result_element;
+
+				$row_counter++;
+				#print "<td><a href=\"download_file.html?file=$encode_file&ip=$encode_ip&profile=$encode_profile&sessionid=$sessionid\">$file_printme</a></td>\n";
+				
+				#print "<td><b><a href=\"test2.html?file=$encode_file&ip=$encode_ip&profile=$encode_profile&sessionid=$sessionid\" onclick=\"return popup(this, 'test2')\">$file_printme</a></b></td>\n";
+				
+				#print "<td>$offset</td>\n";
+
+				#print "<td><input type=checkbox name=f$number value=1></td></tr>\n\n";
+
+# make a fancy false positive interface in the next release
+#				print "<td><input type=checkbox id=f$x onClick=\'fp(\"f$x\", \"$type\", \"$pattern\", \"$file\", \"$offset\", \"$md5\")\'></td></tr>\n";
+			}
+			$view_template->param(result_values => \@result_values);
+			print "Content-type: text/html\n\n", $view_template->output;
+			#print "<tr><td colspan=6 align=right><input type=submit value=\"Mark Selected as False Positives\"></td></tr>\n";
+			#print "</table></form>\n";
+		}
+		elsif( $scantype eq "win_agentless" )
+		{
+            my $view_template = HTML::Template->new(filename => 'viewresults_viewC.tmpl');
+            $view_template->param(usetable_a => "1");
+            $view_template->param(useform_a => "1");
+            $view_template->param(opendlpversion => $version);
+            if($hostname ne "")
+            {
+                $view_template->param(resultheading_hostname => "Results for $ip ($hostname):");
+            }
+            else
+            {
+                $view_template->param(resultheading_hostname => "Results for $ip:");
+            }
+#			print "Results for $ip";
+#			if( $hostname ne "" )
+#			{
+#				print " ($hostname)";
+#			}
+#			print ":<br><br>\n";
+
+			#print "<table class=sample>\n";
+			$view_template->param(resultheading_profilename => $profile);
+			$view_template->param(resultheading_scanstatus => $control);
+			
+			my $steptext = "$status: ";
+			if($status == -1) { $steptext .= "Deploying"; }
+			elsif ($status == 0) { $steptext .= "All files"; }
+			elsif ($status == 1) { $steptext .= "Whitelisting"; }
+			elsif ($status == 2) { $steptext .= "Scanning"; }
+			elsif ($status == 3) { $steptext .= "Done"; }
+			$view_template->param(resultheading_scanstep => $steptext);
+			
+			#print "<tr><td>Profile</td><td align=right>$profile</td></tr>\n";
+			#print "<tr><td>Status</td><td align=right>$control</td></tr>\n";
+			#print "<tr><td>Step</td><td align=right>\n";
+			#if( $status == -1 ) { print "-1: Deploying\n"; }
+			#elsif( $status == 0 ) { print "0: All files\n"; }
+			#elsif( $status == 1 ) { print "1: Whitelisting\n"; }
+			#elsif( $status == 2 ) { print "2: Scanning\n"; }
+			#elsif( $status == 3 ) { print "3: Done\n"; }
+			#print "</td></tr>\n";
+			#print "<tr><td>Files Done</td>\n";
+
+			if( $filesdone ne "" )
+			{
+				#print "<td align=right>" . commify($filesdone) . "</td></tr>\n";
+				$view_template->param(resultheading_filesdone => format_number($filesdone));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_filesdone => "N/A");
+			}
+			#print "<tr><td>Files Total</td>\n";
+			if( $filestotal ne "" )
+			{
+				#print "<td align=right>" . commify($filestotal) . "</td></tr>\n";
+				$view_template->param(resultheading_filestotal => format_number($filestotal));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_filestotal => "N/A");
+			}
+			#print "<tr><td>Bytes Done</td>\n";
+			if( $bytesdone ne "" )
+			{
+				#print "<td align=right>" . commify($bytesdone) . "</td></tr>\n";
+				$view_template->param(resultheading_bytesdone => format_number($bytesdone));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_bytesdone => "N/A");
+			}
+			#print "<tr><td>Bytes Total</td>\n";
+			if( $bytestotal ne "" )
+			{
+				#print "<td align=right>" . commify($bytestotal) . "</td></tr>\n";
+				$view_template->param(resultheading_bytestotal => format_number($bytestotal));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_bytestotal => "N/A");
+			}
+
+			#print "<tr><td>Progress</td>\n";
+			#print "<td>\n";
+			my $rounded = "";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					my $percent = 100 * $bytesdone / $bytestotal;
+					$rounded = sprintf( "%.2f", $percent );
+				}
+				else
+				{
+					$rounded = "100";
+				}
+				my $width = 2 * $rounded;
+				$width = floor( $width );
+				$view_template->param(resultheading_progresspercentage => $width);
+				#print "<table class=sample width=206><tr><td>\n";
+				#print "<img src=\"images/red.gif\" width=\"$width\" height=\"10\">\n";
+				#print "</td></tr></table>\n";
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_progresspercentage => "1");
+			}
+			#print "</td></tr>\n";
+			#print "<tr><td>Percentage</td><td align=right>\n";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					#print $rounded;
+					$view_template->param(resultheading_percentage => "$rounded&#37;");
+				}
+				else
+				{
+					#print "100";
+					$view_template->param(resultheading_percentage => "100&#37;");
+				}
+				#print "\%";
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_percentage => "&nbsp;");
+			}
+			#print "</td></tr>\n";
+			#print "<tr><td>Completion Time</td><td align=right>";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					my $string = "SELECT updated FROM logs WHERE tracker=? ORDER BY updated LIMIT 1";
+					$sth = $dbh->prepare( $string );
+					$sth->execute( $system );
+					my $results = $sth->fetchrow_arrayref();
+					my $starttime = $$results[0];
+					$sth->finish();
+					my $currenttime = time();
+					my $difftime = $currenttime - $starttime;
+					my $eta = ($difftime / ($rounded / 100 )) - $difftime;
+					$eta = floor( $eta );
+					my $hours = floor( $eta / 3600 );
+					my $leftovers = $eta % 3600;
+					my $minutes = floor( $leftovers / 60 );
+					$seconds = $eta % 60;
+					if( $hours < 10 ) { $hours = "0" . $hours; }
+					if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+					if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+					#print "Approx $hours:$minutes:$seconds remaining";
+					$view_template->param(resultheading_completiontime => "Approx $hours:$minutes:$seconds remaining");
+				}
+				else
+				{
+					#print "<br>";
+					$view_template->param(resultheading_completiontime => "&nbsp;");
+				}
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_completiontime => "&nbsp;");
+			}
+			#print "</td>\n";
+			#print "</tr>\n";
+
+			$view_template->param(resultheading_totalfindings => $total);
+			$view_template->param(resultheading_fpcount => $fp_count);
+			#print "<tr><td>Total Findings</td><td align=right>$total</td></tr>\n";
+			#print "<tr><td>False Positives</td><td align=right>$fp_count</td></tr>\n";
+			my $diff = $total - $fp_count;
+			$view_template->param(resultheading_validfindings => $diff);
+			#print "<tr><td>Valid Findings</td><td align=right>$diff</td></tr>\n";
+			my $currenttime = time();
+			my $updatedtime = localtime( $updated );
+			my $timediff = $currenttime - $updated;
+			#print "<tr><td>Updated</td><td align=right>";
+			my $hours = floor($timediff / 3600);
+			my $leftovers = $timediff % 3600;
+			my $minutes = floor($leftovers / 60);
+			my $seconds = $timediff % 60;
+			if( $hours < 10 ) { $hours = "0" . $hours; }
+			if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+			if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+			#print "$hours:$minutes:$seconds ago</td></tr>\n";
+			$view_template->param(resultheading_updated => "$hours:$minutes:$seconds ago");
+
+			# pause
+			#print "<tr><td>Pause</td>\n";
+			if( $control eq "running" )
+			{
+				#print "<td align=right><a href=\"control.html?action=pause&scanname=$scanname&system=$system\">Pause</a></td></tr>\n";
+				$view_template->param(resultheading_pausectrl => "<a href=\"control.html?action=pause&scanname=$scanname&system=$system\">Pause</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_pausectrl => "N/A");
+			}
+
+			# resume
+			#print "<tr><td>Resume</td>\n";
+			if( $control eq "stopped" )
+			{
+				#print "<td align=right><a href=\"control.html?action=resume&scanname=$scanname&system=$system\">Resume</a></td></tr>\n";
+				$view_template->param(resultheading_resumectrl => "<a href=\"control.html?action=resume&scanname=$scanname&system=$system\">Resume</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_resumectrl => "N/A");
+			}
+
+			# uninstall
+			#print "<tr><td>Kill</td>\n";
+			$view_template->param(scanstop_flavortext => "Kill");
+			if( $control =~ /^(stopped|running)$/i )
+			{
+				#print "<td align=right><a href=\"control.html?action=uninstall&scanname=$scanname&system=$system\">Uninstall</a></td></tr>\n";
+				$view_template->param(resultheading_stopuninstall => "<a href=\"control.html?action=uninstall&scanname=$scanname&system=$system\">Uninstall</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_stopuninstall => "N/A");
+			}
+			#print "</table><br><br>\n";
+
+			$view_template->param(result_scansystem => $system);
+			$view_template->param(result_scanname => $scanname);
+			#print "<form method=POST action=results-fp.html>\n";
+			#print "<input type=hidden name=tracker value=\"$system\">\n";
+			#print "<input type=hidden name=scan value=\"$scanname\">\n";
+			#print "<table class=sample>\n";
+			#print "<tr><td>#</td>\n";
+			#print "<td>Regex</td>\n";
+			#print "<td>Pattern</td>\n";
+			#print "<td>File (click to download)</td>\n";
+			#print "<td>Byte offset</td>\n";
+			#print "<td>False?</td></tr>\n";
+
+			my $string = "SELECT DISTINCT type,pattern,file,offset,md5,number,is_false FROM results WHERE scan=? AND tracker=? AND is_false != \"1\" ORDER BY number";
+			my $sth = $dbh->prepare( $string );
+			$sth->execute( $scanname, $system );
+			my $row_counter = 1;
+			
+			my @result_values = ();
+			#while( my $results = $sth->fetchrow_arrayref() )
+			while( my $results = $sth->fetchrow_hashref() )
+			{
+				my $type    = $results->{"type"};
+				my $pattern = $results->{"pattern"};
+				my $file    = $results->{"file"};
+				my $offset  = $results->{"offset"};
+				my $md5     = $results->{"md5"};
+				my $number  = $results->{"number"};
+
+				#print "<tr><td>$row_counter</td>\n";
+				#print "<td>$type</td>\n";
+				my $pattern_copy = replacechars( $pattern );
+				#print "<td>$pattern_copy</td>\n";
+				my $file_printme = $file;
+				$file_printme =~ s/\\\\/\\/g;
+				$file_printme = replacechars( $file_printme );
+				my $encode_file = encode_base64( $file );
+				$encode_file =~ s/\n//g;
+				my $encode_ip = encode_base64( $ip );
+				$encode_ip =~ s/\n//g;
+				my $encode_profile = encode_base64( $profile );
+				$encode_profile =~ s/\n//g;
+				
+				my %result_element = (  result_localcounter => $row_counter,
+                                        result_regexmatchname => $type,
+                                        result_regexmatchvalue => $pattern_copy,
+                                        result_filedownloadhref => "test2.html?file=$encode_file&ip=$encode_ip&profile=$encode_profile&sessionid=$sessionid",
+                                        result_popupwindowname => "test2",
+                                        result_filedownloadhreftext => $file_printme,
+                                        result_byteoffset => $offset,
+                                        result_number => $number);
+				push @result_values, \%result_element;
+
+				$row_counter++;
+
+				#print "<td><a href=\"download_file.html?file=$encode_file&ip=$encode_ip&profile=$encode_profile\">$file_printme</a></td>\n";
+				#print "<td>$offset</td>\n";
+
+				#print "<td><input type=checkbox name=f$number value=1></td></tr>\n\n";
+
+# make a fancy false positive interface in the next release
+#				print "<td><input type=checkbox id=f$x onClick=\'fp(\"f$x\", \"$type\", \"$pattern\", \"$file\", \"$offset\", \"$md5\")\'></td></tr>\n";
+			}
+
+			$view_template->param(result_values => \@result_values);
+			print "Content-type: text/html\n\n", $view_template->output;
+			#print "<tr><td colspan=6 align=right><input type=submit value=\"Mark Selected as False Positives\"></td></tr>\n";
+			#print "</table></form>\n";
+		}
+		elsif( $scantype eq "win_share" )
+		{
+            my $view_template = HTML::Template->new(filename => 'viewresults_viewC.tmpl');
+            $view_template->param(usetable_a => "1");
+            $view_template->param(useform_a => "1");
+            $view_template->param(opendlpversion => $version);
+            
+            my $tmpIPstr = replacechars($ip);
+            if($hostname ne "")
+            {
+                $view_template->param(resultheading_hostname => "Results for $tmpIPstr ($hostname):");
+            }
+            else
+            {
+                $view_template->param(resultheading_hostname => "Results for $tmpIPstr:");
+            }
+			#print "Results for " . replacechars($ip);
+			#if( $hostname ne "" )
+			#{
+			#	print " ($hostname)";
+			#}
+			#print ":<br><br>\n";
+
+			#print "<table class=sample>\n";
+			$view_template->param(resultheading_profilename => $profile);
+			$view_template->param(resultheading_scanstatus => $control);
+			
+			my $steptext = "$status: ";
+			if($status == -1) { $steptext .= "Deploying"; }
+			elsif ($status == 0) { $steptext .= "All files"; }
+			elsif ($status == 1) { $steptext .= "Whitelisting"; }
+			elsif ($status == 2) { $steptext .= "Scanning"; }
+			elsif ($status == 3) { $steptext .= "Done"; }
+			$view_template->param(resultheading_scanstep => $steptext);
+			#print "<tr><td>Profile</td><td align=right>$profile</td></tr>\n";
+			#print "<tr><td>Status</td><td align=right>$control</td></tr>\n";
+			#print "<tr><td>Step</td><td align=right>\n";
+			#if( $status == -1 ) { print "-1: Deploying\n"; }
+			#elsif( $status == 0 ) { print "0: All files\n"; }
+			#elsif( $status == 1 ) { print "1: Whitelisting\n"; }
+			#elsif( $status == 2 ) { print "2: Scanning\n"; }
+			#elsif( $status == 3 ) { print "3: Done\n"; }
+			#print "</td></tr>\n";
+			#print "<tr><td>Files Done</td>\n";
+
+			if( $filesdone ne "" )
+			{
+				#print "<td align=right>" . commify($filesdone) . "</td></tr>\n";
+				$view_template->param(resultheading_filesdone => format_number($filesdone));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_filesdone => "N/A");
+			}
+			#print "<tr><td>Files Total</td>\n";
+			if( $filestotal ne "" )
+			{
+				#print "<td align=right>" . commify($filestotal) . "</td></tr>\n";
+				$view_template->param(resultheading_filestotal => format_number($filestotal));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_filestotal => "N/A");
+			}
+			#print "<tr><td>Bytes Done</td>\n";
+			if( $bytesdone ne "" )
+			{
+				#print "<td align=right>" . commify($bytesdone) . "</td></tr>\n";
+				$view_template->param(resultheading_bytesdone => format_number($bytesdone));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_bytesdone => "N/A");
+			}
+			#print "<tr><td>Bytes Total</td>\n";
+			if( $bytestotal ne "" )
+			{
+				#print "<td align=right>" . commify($bytestotal) . "</td></tr>\n";
+				$view_template->param(resultheading_bytestotal => format_number($bytestotal));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_bytestotal => "N/A");
+			}
+
+			#print "<tr><td>Progress</td>\n";
+			#print "<td>\n";
+			my $rounded = "";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					my $percent = 100 * $bytesdone / $bytestotal;
+					$rounded = sprintf( "%.2f", $percent );
+				}
+				else
+				{
+					$rounded = "100";
+				}
+				my $width = 2 * $rounded;
+				$width = floor( $width );
+				$view_template->param(resultheading_progresspercentage => $width);
+				#print "<table class=sample width=206><tr><td>\n";
+				#print "<img src=\"images/red.gif\" width=\"$width\" height=\"10\">\n";
+				#print "</td></tr></table>\n";
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_progresspercentage => "1");
+			}
+			#print "</td></tr>\n";
+			#print "<tr><td>Percentage</td><td align=right>\n";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					#print $rounded;
+					$view_template->param(resultheading_percentage => "$rounded&#37;");
+				}
+				else
+				{
+					#print "100";
+					$view_template->param(resultheading_percentage => "100&#37;");
+				}
+				#print "\%";
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_percentage => "&nbsp;");
+			}
+			#print "</td></tr>\n";
+			#print "<tr><td>Completion Time</td><td align=right>";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					my $string = "SELECT updated FROM logs WHERE tracker=? ORDER BY updated LIMIT 1";
+					$sth = $dbh->prepare( $string );
+					$sth->execute( $system );
+					my $results = $sth->fetchrow_arrayref();
+					my $starttime = $$results[0];
+					$sth->finish();
+					my $currenttime = time();
+					my $difftime = $currenttime - $starttime;
+					my $eta = ($difftime / ($rounded / 100 )) - $difftime;
+					$eta = floor( $eta );
+					my $hours = floor( $eta / 3600 );
+					my $leftovers = $eta % 3600;
+					my $minutes = floor( $leftovers / 60 );
+					$seconds = $eta % 60;
+					if( $hours < 10 ) { $hours = "0" . $hours; }
+					if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+					if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+					#print "Approx $hours:$minutes:$seconds remaining";
+					$view_template->param(resultheading_completiontime => "Approx $hours:$minutes:$seconds remaining");
+				}
+				else
+				{
+					#print "<br>";
+					$view_template->param(resultheading_completiontime => "&nbsp;");
+				}
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_completiontime => "&nbsp;");
+			}
+			#print "</td>\n";
+			#print "</tr>\n";
+
+			$view_template->param(resultheading_totalfindings => $total);
+			$view_template->param(resultheading_fpcount => $fp_count);
+			#print "<tr><td>Total Findings</td><td align=right>$total</td></tr>\n";
+			#print "<tr><td>False Positives</td><td align=right>$fp_count</td></tr>\n";
+			my $diff = $total - $fp_count;
+			$view_template->param(resultheading_validfindings => $diff);
+			#print "<tr><td>Valid Findings</td><td align=right>$diff</td></tr>\n";
+			my $currenttime = time();
+			my $updatedtime = localtime( $updated );
+			my $timediff = $currenttime - $updated;
+			#print "<tr><td>Updated</td><td align=right>";
+			my $hours = floor($timediff / 3600);
+			my $leftovers = $timediff % 3600;
+			my $minutes = floor($leftovers / 60);
+			my $seconds = $timediff % 60;
+			if( $hours < 10 ) { $hours = "0" . $hours; }
+			if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+			if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+			#print "$hours:$minutes:$seconds ago</td></tr>\n";
+			$view_template->param(resultheading_updated => "$hours:$minutes:$seconds ago");
+
+			# pause
+			#print "<tr><td>Pause</td>\n";
+			if( $control eq "running" )
+			{
+				#print "<td align=right><a href=\"control.html?action=pause&scanname=$scanname&system=$system\">Pause</a></td></tr>\n";
+				$view_template->param(resultheading_pausectrl => "<a href=\"control.html?action=pause&scanname=$scanname&system=$system\">Pause</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_pausectrl => "N/A");
+			}
+
+			# resume
+			#print "<tr><td>Resume</td>\n";
+			if( $control eq "stopped" )
+			{
+				#print "<td align=right><a href=\"control.html?action=resume&scanname=$scanname&system=$system\">Resume</a></td></tr>\n";
+				$view_template->param(resultheading_resumectrl => "<a href=\"control.html?action=resume&scanname=$scanname&system=$system\">Resume</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_resumectrl => "N/A");
+			}
+
+			# uninstall
+			#print "<tr><td>Kill</td>\n";
+			$view_template->param(scanstop_flavortext => "Kill");
+			if( $control =~ /^(stopped|running)$/i )
+			{
+				#print "<td align=right><a href=\"control.html?action=uninstall&scanname=$scanname&system=$system\">Uninstall</a></td></tr>\n";
+				$view_template->param(resultheading_stopuninstall => "<a href=\"control.html?action=uninstall&scanname=$scanname&system=$system\">Uninstall</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_stopuninstall => "N/A");
+			}
+			#print "</table><br><br>\n";
+
+			$view_template->param(result_scansystem => $system);
+			$view_template->param(result_scanname => $scanname);
+#			print "<form method=POST action=results-fp.html>\n";
+#			print "<input type=hidden name=tracker value=\"$system\">\n";
+#			print "<input type=hidden name=scan value=\"$scanname\">\n";
+#			print "<table class=sample>\n";
+#			print "<tr><td>#</td>\n";
+#			print "<td>Regex</td>\n";
+#			print "<td>Pattern</td>\n";
+#			print "<td>File (click to download)</td>\n";
+#			print "<td>Byte offset</td>\n";
+#			print "<td>False?</td></tr>\n";
+
+			my $string = "SELECT DISTINCT type,pattern,file,offset,md5,number,is_false FROM results WHERE scan=? AND tracker=? AND is_false != \"1\" ORDER BY number";
+			my $sth = $dbh->prepare( $string );
+			$sth->execute( $scanname, $system );
+			my $row_counter = 1;
+			
+			my @result_values = ();
+			#while( my $results = $sth->fetchrow_arrayref() )
+			while( my $results = $sth->fetchrow_hashref() )
+			{
+				my $type    = $results->{"type"};
+				my $pattern = $results->{"pattern"};
+				my $file    = $results->{"file"};
+				my $offset  = $results->{"offset"};
+				my $md5     = $results->{"md5"};
+				my $number  = $results->{"number"};
+
+				#print "<tr><td>$row_counter</td>\n";
+				#print "<td>$type</td>\n";
+				my $pattern_copy = replacechars( $pattern );
+				#print "<td>$pattern_copy</td>\n";
+				my $file_printme = $file;
+				$file_printme =~ s/\\\\/\\/g;
+				$file_printme = replacechars( $file_printme );
+				my $encode_file = encode_base64( $file );
+				$encode_file =~ s/\n//g;
+				my $encode_ip = encode_base64( $ip );
+				$encode_ip =~ s/\n//g;
+				my $encode_profile = encode_base64( $profile );
+				$encode_profile =~ s/\n//g;
+				
+				my %result_element = (  result_localcounter => $row_counter,
+                                        result_regexmatchname => $type,
+                                        result_regexmatchvalue => $pattern_copy,
+                                        result_filedownloadhref => "test2.html?file=$encode_file&ip=$encode_ip&profile=$encode_profile&sessionid=$sessionid",
+                                        result_popupwindowname => "test2",
+                                        result_filedownloadhreftext => $file_printme,
+                                        result_byteoffset => $offset,
+                                        result_number => $number);
+				push @result_values, \%result_element;
+				
+				$row_counter++;
+				#print "<td><a href=\"download_file.html?file=$encode_file&ip=$encode_ip&profile=$encode_profile\">$file_printme</a></td>\n";
+				#print "<td>$offset</td>\n";
+
+				#print "<td><input type=checkbox name=f$number value=1></td></tr>\n\n";
+
+# make a fancy false positive interface in the next release
+#				print "<td><input type=checkbox id=f$x onClick=\'fp(\"f$x\", \"$type\", \"$pattern\", \"$file\", \"$offset\", \"$md5\")\'></td></tr>\n";
+			}
+			$view_template->param(result_values => \@result_values);
+			print "Content-type: text/html\n\n", $view_template->output;
+			#print "<tr><td colspan=6 align=right><input type=submit value=\"Mark Selected as False Positives\"></td></tr>\n";
+			#print "</table></form>\n";
+		}
+		elsif( $scantype eq "unix_agentless" )
+		{
+            my $view_template = HTML::Template->new(filename => 'viewresults_viewC.tmpl');
+            $view_template->param(usetable_a => "1");
+            $view_template->param(useform_a => "1");
+            $view_template->param(opendlpversion => $version);
+
+            if($hostname ne "")
+            {
+                $view_template->param(resultheading_hostname => "Results for $ip ($hostname):");
+            }
+            else
+            {
+                $view_template->param(resultheading_hostname => "Results for $ip:");
+            }
+            
+#			print "Results for $ip";
+#			if( $hostname ne "" )
+#			{
+#				print " ($hostname)";
+#			}
+#			print ":<br><br>\n";
+
+#			print "<table class=sample>\n";
+
+            $view_template->param(resultheading_profilename => $profile);
+			$view_template->param(resultheading_scanstatus => $control);
+			
+			my $steptext = "$status: ";
+			if($status == -1) { $steptext .= "Deploying"; }
+			elsif ($status == 0) { $steptext .= "All files"; }
+			elsif ($status == 1) { $steptext .= "Whitelisting"; }
+			elsif ($status == 2) { $steptext .= "Scanning"; }
+			elsif ($status == 3) { $steptext .= "Done"; }
+			$view_template->param(resultheading_scanstep => $steptext);
+
+#			print "<tr><td>Profile</td><td align=right>$profile</td></tr>\n";
+#			print "<tr><td>Status</td><td align=right>$control</td></tr>\n";
+#			print "<tr><td>Step</td><td align=right>\n";
+#			if( $status == -1 ) { print "-1: Deploying\n"; }
+#			elsif( $status == 0 ) { print "0: All files\n"; }
+#			elsif( $status == 1 ) { print "1: Whitelisting\n"; }
+#			elsif( $status == 2 ) { print "2: Scanning\n"; }
+#			elsif( $status == 3 ) { print "3: Done\n"; }
+#			print "</td></tr>\n";
+#			print "<tr><td>Files Done</td>\n";
+
+			if( $filesdone ne "" )
+			{
+				#print "<td align=right>" . commify($filesdone) . "</td></tr>\n";
+				$view_template->param(resultheading_filesdone => format_number($filesdone));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_filesdone => "N/A");
+			}
+			#print "<tr><td>Files Total</td>\n";
+			if( $filestotal ne "" )
+			{
+				#print "<td align=right>" . commify($filestotal) . "</td></tr>\n";
+				$view_template->param(resultheading_filestotal => format_number($filestotal));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_filestotal => "N/A");
+			}
+			#print "<tr><td>Bytes Done</td>\n";
+			if( $bytesdone ne "" )
+			{
+				#print "<td align=right>" . commify($bytesdone) . "</td></tr>\n";
+				$view_template->param(resultheading_bytesdone => format_number($bytesdone));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_bytesdone => "N/A");
+			}
+			#print "<tr><td>Bytes Total</td>\n";
+			if( $bytestotal ne "" )
+			{
+				#print "<td align=right>" . commify($bytestotal) . "</td></tr>\n";
+				$view_template->param(resultheading_bytestotal => format_number($bytestotal));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_bytestotal => "N/A");
+			}
+
+			#print "<tr><td>Progress</td>\n";
+			#print "<td>\n";
+			my $rounded = "";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					my $percent = 100 * $bytesdone / $bytestotal;
+					$rounded = sprintf( "%.2f", $percent );
+				}
+				else
+				{
+					$rounded = "100";
+				}
+				my $width = 2 * $rounded;
+				$width = floor( $width );
+				$view_template->param(resultheading_progresspercentage => $width);
+				#print "<table class=sample width=206><tr><td>\n";
+				#print "<img src=\"images/red.gif\" width=\"$width\" height=\"10\">\n";
+				#print "</td></tr></table>\n";
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_progresspercentage => "1");
+			}
+			#print "</td></tr>\n";
+			#print "<tr><td>Percentage</td><td align=right>\n";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					#print $rounded;
+					$view_template->param(resultheading_percentage => "$rounded&#37;");
+				}
+				else
+				{
+					#print "100";
+					$view_template->param(resultheading_percentage => "100&#37;");
+				}
+				#print "\%";
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_percentage => "&nbsp;");
+			}
+			#print "</td></tr>\n";
+			#print "<tr><td>Completion Time</td><td align=right>";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					my $string = "SELECT updated FROM logs WHERE tracker=? ORDER BY updated LIMIT 1";
+					$sth = $dbh->prepare( $string );
+					$sth->execute( $system );
+					my $results = $sth->fetchrow_arrayref();
+					my $starttime = $$results[0];
+					$sth->finish();
+					my $currenttime = time();
+					my $difftime = $currenttime - $starttime;
+					my $eta = ($difftime / ($rounded / 100 )) - $difftime;
+					$eta = floor( $eta );
+					my $hours = floor( $eta / 3600 );
+					my $leftovers = $eta % 3600;
+					my $minutes = floor( $leftovers / 60 );
+					$seconds = $eta % 60;
+					if( $hours < 10 ) { $hours = "0" . $hours; }
+					if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+					if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+					#print "Approx $hours:$minutes:$seconds remaining";
+					$view_template->param(resultheading_completiontime => "Approx $hours:$minutes:$seconds remaining");
+				}
+				else
+				{
+					#print "<br>";
+					$view_template->param(resultheading_completiontime => "&nbsp;");
+				}
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_completiontime => "&nbsp;");
+			}
+			#print "</td>\n";
+			#print "</tr>\n";
+
+			$view_template->param(resultheading_totalfindings => $total);
+			$view_template->param(resultheading_fpcount => $fp_count);
+			#print "<tr><td>Total Findings</td><td align=right>$total</td></tr>\n";
+			#print "<tr><td>False Positives</td><td align=right>$fp_count</td></tr>\n";
+			my $diff = $total - $fp_count;
+			$view_template->param(resultheading_validfindings => $diff);
+			#print "<tr><td>Valid Findings</td><td align=right>$diff</td></tr>\n";
+			my $currenttime = time();
+			my $updatedtime = localtime( $updated );
+			my $timediff = $currenttime - $updated;
+			#print "<tr><td>Updated</td><td align=right>";
+			my $hours = floor($timediff / 3600);
+			my $leftovers = $timediff % 3600;
+			my $minutes = floor($leftovers / 60);
+			my $seconds = $timediff % 60;
+			if( $hours < 10 ) { $hours = "0" . $hours; }
+			if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+			if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+			#print "$hours:$minutes:$seconds ago</td></tr>\n";
+			$view_template->param(resultheading_updated => "$hours:$minutes:$seconds ago");
+
+			# pause
+			#print "<tr><td>Pause</td>\n";
+			if( $control eq "running" )
+			{
+				#print "<td align=right><a href=\"control.html?action=pause&scanname=$scanname&system=$system\">Pause</a></td></tr>\n";
+				$view_template->param(resultheading_pausectrl => "<a href=\"control.html?action=pause&scanname=$scanname&system=$system\">Pause</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_pausectrl => "N/A");
+			}
+
+			# resume
+			#print "<tr><td>Resume</td>\n";
+			if( $control eq "stopped" )
+			{
+				#print "<td align=right><a href=\"control.html?action=resume&scanname=$scanname&system=$system\">Resume</a></td></tr>\n";
+				$view_template->param(resultheading_resumectrl => "<a href=\"control.html?action=resume&scanname=$scanname&system=$system\">Resume</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_resumectrl => "N/A");
+			}
+
+			# uninstall
+			#print "<tr><td>Kill</td>\n";
+			$view_template->param(scanstop_flavortext => "Kill");
+			if( $control =~ /^(stopped|running)$/i )
+			{
+				#print "<td align=right><a href=\"control.html?action=uninstall&scanname=$scanname&system=$system\">Uninstall</a></td></tr>\n";
+				$view_template->param(resultheading_stopuninstall => "<a href=\"control.html?action=uninstall&scanname=$scanname&system=$system\">Uninstall</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_stopuninstall => "N/A");
+			}
+			#print "</table><br><br>\n";
+
+			$view_template->param(result_scansystem => $system);
+			$view_template->param(result_scanname => $scanname);
+#			print "<form method=POST action=results-fp.html>\n";
+#			print "<input type=hidden name=tracker value=\"$system\">\n";
+#			print "<input type=hidden name=scan value=\"$scanname\">\n";
+#			print "<table class=sample>\n";
+#			print "<tr><td>#</td>\n";
+#			print "<td>Regex</td>\n";
+#			print "<td>Pattern</td>\n";
+#			print "<td>File (click to download)</td>\n";
+#			print "<td>Byte offset</td>\n";
+#			print "<td>False?</td></tr>\n";
+
+			my $string = "SELECT DISTINCT type,pattern,file,offset,md5,number,is_false FROM results WHERE scan=? AND tracker=? AND is_false != \"1\" ORDER BY number";
+			my $sth = $dbh->prepare( $string );
+			$sth->execute( $scanname, $system );
+			my $row_counter = 1;
+			
+			my @result_values = ();
+			#while( my $results = $sth->fetchrow_arrayref() )
+			while( my $results = $sth->fetchrow_hashref() )
+			{
+				my $type    = $results->{"type"};
+				my $pattern = $results->{"pattern"};
+				my $file    = $results->{"file"};
+				my $offset  = $results->{"offset"};
+				my $md5     = $results->{"md5"};
+				my $number  = $results->{"number"};
+
+				#print "<tr><td>$row_counter</td>\n";
+				#print "<td>$type</td>\n";
+				my $pattern_copy = replacechars( $pattern );
+				#print "<td>$pattern_copy</td>\n";
+				my $file_printme = $file;
+				$file_printme =~ s/\\\\/\\/g;
+				$file_printme = replacechars( $file_printme );
+				my $encode_file = encode_base64( $file );
+				$encode_file =~ s/\n//g;
+				my $encode_ip = encode_base64( $ip );
+				$encode_ip =~ s/\n//g;
+				my $encode_profile = encode_base64( $profile );
+				$encode_profile =~ s/\n//g;
+				
+				my %result_element = (  result_localcounter => $row_counter,
+                                        result_regexmatchname => $type,
+                                        result_regexmatchvalue => $pattern_copy,
+                                        result_filedownloadhref => "test2.html?file=$encode_file&ip=$encode_ip&profile=$encode_profile&sessionid=$sessionid",
+                                        result_popupwindowname => "test2",
+                                        result_filedownloadhreftext => $file_printme,
+                                        result_byteoffset => $offset,
+                                        result_number => $number);
+				push @result_values, \%result_element;
+				
+				$row_counter++;
+				#print "<td><a href=\"download_file.html?file=$encode_file&ip=$encode_ip&profile=$encode_profile\">$file_printme</a></td>\n";
+				#print "<td>$offset</td>\n";
+
+				#print "<td><input type=checkbox name=f$number value=1></td></tr>\n\n";
+
+# make a fancy false positive interface in the next release
+#				print "<td><input type=checkbox id=f$x onClick=\'fp(\"f$x\", \"$type\", \"$pattern\", \"$file\", \"$offset\", \"$md5\")\'></td></tr>\n";
+			}
+			
+			$view_template->param(result_values => \@result_values);
+			print "Content-type: text/html\n\n<!-- NEW: Josh 2018 -->\n", $view_template->output;
+			#print "<tr><td colspan=6 align=right><input type=submit value=\"Mark Selected as False Positives\"></td></tr>\n";
+			#print "</table></form>\n";
+		}
+
+		#############
+		# databases #
+		#############
+		elsif( $scantype =~ /^(mssql_agentless|mysql_agentless)$/ ) # TODO (check...)
+		{
+            my $view_template = HTML::Template->new(filename => 'viewresults_viewC.tmpl');
+            $view_template->param(opendlpversion => $version);
+            $view_template->param(usetable_b => "1");
+            $view_template->param(useform_b => "1");
+            if($hostname ne "")
+            {
+                $view_template->param(resultheading_hostname => "Results for $ip ($hostname):");
+            }
+            else
+            {
+                $view_template->param(resultheading_hostname => "Results for $ip:");
+            }
+            
+			#print "Results for database server $ip";
+			#if( $hostname ne "" )
+			#{
+			#	print " ($hostname)";
+			#}
+			#print ":<br><br>\n";
+
+			#print "<table class=sample>\n";
+			$view_template->param(resultheading_profilename => $profile);
+			$view_template->param(resultheading_scanstatus => $control);
+			
+			my $steptext = "$status: ";
+			if($status == -1) { $steptext .= "Deploying"; }
+			elsif ($status == 0) { $steptext .= "All files"; }
+			elsif ($status == 1) { $steptext .= "Whitelisting"; }
+			elsif ($status == 2) { $steptext .= "Scanning"; }
+			elsif ($status == 3) { $steptext .= "Done"; }
+			$view_template->param(resultheading_scanstep => $steptext);
+			
+			#print "<tr><td>Profile</td><td align=right>$profile</td></tr>\n";
+			#print "<tr><td>Status</td><td align=right>$control</td></tr>\n";
+			#print "<tr><td>Step</td><td align=right>\n";
+			#if( $status == -1 ) { print "-1: Deploying\n"; }
+			#elsif( $status == 0 ) { print "0: All files\n"; }
+			#elsif( $status == 1 ) { print "1: Whitelisting\n"; }
+			#elsif( $status == 2 ) { print "2: Scanning\n"; }
+			#elsif( $status == 3 ) { print "3: Done\n"; }
+			#print "</td></tr>\n";
+			#print "<tr><td>Databases Done</td>\n";
+
+			if( $dbdone ne "" )
+			{
+				#print "<td align=right>" . commify($dbdone) . "</td></tr>\n";
+				$view_template->param(resultheading_dbsdone => format_number($dbdone));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_dbsdone => "N/A");
+			}
+			#print "<tr><td>Databases Total</td>\n";
+			if( $dbtotal ne "" )
+			{
+				#print "<td align=right>" . commify($dbtotal) . "</td></tr>\n";
+				$view_template->param(resultheading_dbstotal => format_number($dbtotal));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_dbstotal => "N/A");
+			}
+			#print "<tr><td>Tables Done</td>\n";
+			if( $tabledone ne "" )
+			{
+				#print "<td align=right>" . commify($tabledone) . "</td></tr>\n";
+				$view_template->param(resultheading_tablesdone => format_number($tabledone));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_tablesdone => "N/A");
+			}
+			#print "<tr><td>Tables Total</td>\n";
+			if( $tabletotal ne "" )
+			{
+				#print "<td align=right>" . commify($tabletotal) . "</td></tr>\n";
+				$view_template->param(resultheading_tablestotal => format_number($tabletotal));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_tablestotal => "N/A");
+			}
+			#print "<tr><td>Columns Done</td>\n";
+			if( $columndone ne "" )
+			{
+				#print "<td align=right>" . commify($columndone) . "</td></tr>\n";
+				$view_template->param(resultheading_columnsdone => format_number($columndone));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_columnsdone => "N/A");
+			}
+			#print "<tr><td>Columns Total</td>\n";
+			if( $columntotal ne "" )
+			{
+				#print "<td align=right>" . commify($columntotal) . "</td></tr>\n";
+				$view_template->param(resultheading_columnstotal => format_number($columntotal));
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_columnstotal => "N/A");
+			}
+
+			#print "<tr><td>Progress</td>\n";
+			#print "<td>\n";
+			my $rounded = "";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					my $percent = 100 * $columndone / $columntotal;
+					$rounded = sprintf( "%.2f", $percent );
+				}
+				else
+				{
+					$rounded = "100";
+				}
+				my $width = 2 * $rounded;
+				$width = floor( $width );
+				$view_template->param(resultheading_progresspercentage => $width);
+				#print "<table class=sample width=206><tr><td>\n";
+				#print "<img src=\"images/red.gif\" width=\"$width\" height=\"10\">\n";
+				#print "</td></tr></table>\n";
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_progresspercentage => "1");
+			}
+			#print "</td></tr>\n";
+			#print "<tr><td>Percentage</td><td align=right>\n";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					#print $rounded;
+					$view_template->param(resultheading_percentage => "$rounded&#37;");
+				}
+				else
+				{
+					#print "100";
+					$view_template->param(resultheading_percentage => "100&#37;");
+				}
+				#print "\%";
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_percentage => "&nbsp;");
+			}
+			#print "</td></tr>\n";
+			#print "<tr><td>Completion Time</td><td align=right>";
+			if( $status > 1 )
+			{
+				if( $status != 3 )
+				{
+					my $string = "SELECT updated FROM logs WHERE tracker=? ORDER BY updated LIMIT 1";
+					$sth = $dbh->prepare( $string );
+					$sth->execute( $system );
+					my $results = $sth->fetchrow_arrayref();
+					my $starttime = $$results[0];
+					$sth->finish();
+					my $currenttime = time();
+					my $difftime = $currenttime - $starttime;
+					my $eta = ($difftime / ($rounded / 100 )) - $difftime;
+					$eta = floor( $eta );
+					my $hours = floor( $eta / 3600 );
+					my $leftovers = $eta % 3600;
+					my $minutes = floor( $leftovers / 60 );
+					$seconds = $eta % 60;
+					if( $hours < 10 ) { $hours = "0" . $hours; }
+					if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+					if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+					#print "Approx $hours:$minutes:$seconds remaining";
+					$view_template->param(resultheading_completiontime => "Approx $hours:$minutes:$seconds remaining");
+				}
+				else
+				{
+					#print "<br>";
+					$view_template->param(resultheading_completiontime => "&nbsp;");
+				}
+			}
+			else
+			{
+				#print "<br>";
+				$view_template->param(resultheading_completiontime => "&nbsp;");
+			}
+			#print "</td>\n";
+			#print "</tr>\n";
+
+			$view_template->param(resultheading_totalfindings => $total);
+			$view_template->param(resultheading_fpcount => $fp_count);
+			#print "<tr><td>Total Findings</td><td align=right>$total</td></tr>\n";
+			#print "<tr><td>False Positives</td><td align=right>$fp_count</td></tr>\n";
+			my $diff = $total - $fp_count;
+			$view_template->param(resultheading_validfindings => $diff);
+			#print "<tr><td>Valid Findings</td><td align=right>$diff</td></tr>\n";
+			my $currenttime = time();
+			my $updatedtime = localtime( $updated );
+			my $timediff = $currenttime - $updated;
+			#print "<tr><td>Updated</td><td align=right>";
+			my $hours = floor($timediff / 3600);
+			my $leftovers = $timediff % 3600;
+			my $minutes = floor($leftovers / 60);
+			my $seconds = $timediff % 60;
+			if( $hours < 10 ) { $hours = "0" . $hours; }
+			if( $minutes < 10 ) { $minutes = "0" . $minutes; }
+			if( $seconds < 10 ) { $seconds = "0" . $seconds; }
+			#print "$hours:$minutes:$seconds ago</td></tr>\n";
+			$view_template->param(resultheading_updated => "$hours:$minutes:$seconds ago");
+
+			# pause
+			#print "<tr><td>Pause</td>\n";
+			if( $control eq "running" )
+			{
+				#print "<td align=right><a href=\"control.html?action=pause&scanname=$scanname&system=$system\">Pause</a></td></tr>\n";
+				$view_template->param(resultheading_pausectrl => "<a href=\"control.html?action=pause&scanname=$scanname&system=$system\">Pause</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_pausectrl => "N/A");
+			}
+
+			# resume
+			#print "<tr><td>Resume</td>\n";
+			if( $control eq "stopped" )
+			{
+				#print "<td align=right><a href=\"control.html?action=resume&scanname=$scanname&system=$system\">Resume</a></td></tr>\n";
+				$view_template->param(resultheading_resumectrl => "<a href=\"control.html?action=resume&scanname=$scanname&system=$system\">Resume</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_resumectrl => "N/A");
+			}
+
+			# uninstall
+			#print "<tr><td>Kill</td>\n";
+			$view_template->param(scanstop_flavortext => "Kill");
+			if( $control =~ /^(stopped|running)$/i )
+			{
+				#print "<td align=right><a href=\"control.html?action=uninstall&scanname=$scanname&system=$system\">Uninstall</a></td></tr>\n";
+				$view_template->param(resultheading_stopuninstall => "<a href=\"control.html?action=uninstall&scanname=$scanname&system=$system\">Uninstall</a>");
+			}
+			else
+			{
+				#print "<td align=right>N/A</td></tr>\n";
+				$view_template->param(resultheading_stopuninstall => "N/A");
+			}
+			#print "</table><br><br>\n";
+
+			$view_template->param(result_scansystem => $system);
+			$view_template->param(result_scanname => $scanname);
+#			print "<form method=POST action=results-fp.html>\n";
+#			print "<input type=hidden name=tracker value=\"$system\">\n";
+#			print "<input type=hidden name=scan value=\"$scanname\">\n";
+#			print "<table class=sample>\n";
+#			print "<tr><td>#</td>\n";
+#			print "<td>Regex</td>\n";
+#			print "<td>Pattern</td>\n";
+#			print "<td>Database</td>\n";
+#			print "<td>Table</td>\n";
+#			print "<td>Column</td>\n";
+#			print "<td>Row</td>\n";
+#			print "<td>False?</td></tr>\n";
+
+			my $string = "SELECT DISTINCT type,pattern,db,tbl,col,row,number,is_false FROM results WHERE scan=? AND tracker=? AND is_false != \"1\" ORDER BY number";
+			my $sth = $dbh->prepare( $string );
+			$sth->execute( $scanname, $system );
+			my $row_counter = 1;
+			
+			my @result_values = ();
+			#while( my $results = $sth->fetchrow_arrayref() )
+			while( my $results = $sth->fetchrow_hashref() )
+			{
+				my $type    = $results->{"type"};
+				my $pattern = $results->{"pattern"};
+				my $db      = $results->{"db"};
+				my $tbl     = $results->{"tbl"};
+				my $col     = $results->{"col"};
+				my $row     = $results->{"row"};
+				my $number  = $results->{"number"};
+
+				#print "<tr><td>$row_counter</td>\n";
+
+				#print "<td>$type</td>\n";
+				my $pattern_copy = replacechars( $pattern );
+				#print "<td>$pattern_copy</td>\n";
+				my $db_printme = replacechars( $db );
+				#print "<td>$db_printme</td>\n";
+				my $tbl_printme = replacechars( $tbl );
+				#print "<td>$tbl_printme</td>\n";
+				my $col_printme = replacechars( $col );
+				#print "<td>$col_printme</td>\n";
+				#print "<td>" . commify($row) . "</td>\n";
+
+				my %result_element = (  result_localcounter => $row_counter,
+                                        result_regexmatchname => $type,
+                                        result_regexmatchvalue => $pattern_copy,
+                                        result_dbname => $db_printme,
+                                        result_tablename => $tbl_printme,
+                                        result_colname => $col_printme,
+                                        result_rowname => format_number($row),
+                                        result_number => $number);
+                push @result_values, \%result_element;
+				$row_counter++;
+				#print "<td><input type=checkbox name=f$number value=1></td></tr>\n\n";
+
+# make a fancy false positive interface in the next release
+#				print "<td><input type=checkbox id=f$x onClick=\'fp(\"f$x\", \"$type\", \"$pattern\", \"$file\", \"$offset\", \"$md5\")\'></td></tr>\n";
+			}
+			
+			$view_template->param(result_values => \@result_values);
+			print "Content-type: text/html\n\n", $view_template->output;
+			#print "<tr><td colspan=8 align=right><input type=submit value=\"Mark Selected as False Positives\"></td></tr>\n";
+			#print "</table></form>\n";
+		}
+		
+		$sth->finish();
+		$dbh->disconnect();
+	}
+}
+
+
+#footer();
+
+sub header
+{
+	print "Content-type: text/html\n\n";
+	print "<!DOCTYPE html>\n<html>\n<head>\n";
+	print "<title>OpenDLP $version</title>\n";
+	#########################
+    # NEW: Josh - 2018.06.10
+    #########################
+	print "<link rel=stylesheet type=text/css href=styles/style_a.css>\n";
+	print "<script src=scripts/actions.js></script>\n";
+	
+	print "</head>\n";
+	print "<body leftmargin=0 topmargin=0 onLoad=\"menu.toggleMe(\'scans\')\">\n";
+	print '<iframe src="sidebar.html" frameborder="0" align="left" width=175 height="100%" name=menu></iframe><table border=0 cellpadding=0 cellspacing=0><tr><td>' . "\n";
+}
+
+sub footer
+{
+	print "</td></tr></table></body></html>\n";
+}
+
+sub replacechars
+{
+	my $string = shift;
+
+	$string =~ s/\&/\&amp;/g;
+	$string =~ s/\#/&#35;/g;
+	$string =~ s/"/&#34;/g;
+	$string =~ s/\%/&#37;/g;
+	$string =~ s/\'/&#39;/g;
+	$string =~ s/\//&#47;/g;
+	$string =~ s/</&#60;/g;
+	$string =~ s/>/&#62;/g;
+	$string =~ s/\[/&#91;/g;
+	$string =~ s/\\/&#92;/g;
+	$string =~ s/\]/&#93;/g;
+	$string =~ s/`/&#96;/g;
+	$string =~ s/{/&#123;/g;
+	$string =~ s/\|/&#124;/g;
+	$string =~ s/}/&#125;/g;
+	$string =~ s/\(/&#40;/g;
+	$string =~ s/\)/&#41;/g;
+	$string =~ s/\n//g;
+	$string =~ s/\r//g;
+	$string =~ s/\ /&nbsp;/g;
+
+	return $string;
+}
+
+sub get_version
+{
+	open( V, "<../etc/version" );
+	my $v = <V>;
+	close( V );
+	chomp $v;
+	return $v;
+}
+
+sub commify
+{
+	#my $input = shift;
+	#$input = reverse $input;
+	#$input =~ s/(\d\d\d)(?=\d)(?!\d*\.)/$1,/g;
+	#########################
+    # NEW: Josh - 2018.06.21
+    #########################
+	#return scalar reverse $input;
+	return format_number(shift);
+}
+
+
+sub getIpFromPeer 
+{
+  my $peer = shift;
+  my $pos = index($peer, ":");
+  if ($pos == -1) { return $peer; }
+  else { return substr($peer, 0, $pos); }
+}
